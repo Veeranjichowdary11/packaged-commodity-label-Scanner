@@ -1,0 +1,24 @@
+import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
+import './globals.css';
+import Navbar from '@/components/Navbar';
+import { Toaster } from 'react-hot-toast';
+
+const inter = Inter({ subsets: ['latin'] });
+
+export const metadata: Metadata = {
+  title: 'Janch (जाँच) - AI Legal Metrology Compliance',
+  description: 'AI-powered packaged commodity label compliance checker under Legal Metrology (Packaged Commodities) Rules, 2011',
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body className={inter.className}>
+        <Navbar />
+        <main>{children}</main>
+        <Toaster position="top-right" />
+      </body>
+    </html>
+  );
+}

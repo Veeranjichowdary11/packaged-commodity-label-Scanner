@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground: #1a202c;
+  --background: #f7fafc;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.scan-pulse {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.compliance-badge {
+  @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+}
+
+.badge-compliant {
+  @apply bg-green-100 text-green-800;
+}
+
+.badge-non-compliant {
+  @apply bg-red-100 text-red-800;
+}
+
+.badge-partial {
+  @apply bg-yellow-100 text-yellow-800;
+}
