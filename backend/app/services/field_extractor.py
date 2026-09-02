@@ -3,21 +3,38 @@ from typing import Optional
 
 
 def extract_mrp(text: str) -> Optional[dict]:
+    # Handle EasyOCR rendering ₹ or : as {, ?, [, (, <, ~, etc., or standard Rs./INR/₹
     patterns = [
-        # Handle EasyOCR rendering ₹ as ? or other garbled chars
-        r'(?:MRP|M\.R\.P\.?|Maximum\s+Retail\s+Price)\s*[:\.]?\s*(?:Rs\.?|₹|INR|[?])?\s*(\d+[\.,]?\d*)',
-        r'(?:Rs\.?|₹|INR)\s*(\d+[\.,]?\d*)\s*(?:\(?\s*(?:incl|inclusive|including))',
-        r'(?:price|MRP)\s*[:\s]*(\d+[\.,]?\d*)',
+        r'(?:MRP|M\.R\.P\.?|Maximum\s+Retail\s+Price|Retail\s+Price)\s*[:\.\-]?\s*(?:Rs\.?|₹|INR|[?{\[\(<\|~/\\*#])*\s*(\d+[\.,]\d{1,2}|\d+)',
+        r'(?:Rs\.?|₹|INR|[?{\[])\s*(\d+[\.,]?\d*)\s*(?:\(?\s*(?:incl|inclusive|including))',
+        r'(?:price|MRP)\s*[:\s\-]*[?{\[\(<\|~/\\*#]?\s*(\d+[\.,]\d{1,2}|\d+)',
     ]
+    has_tax_note = bool(re.search(
+        r'incl.*?(?:tax|taxes)|inclusive.*?(?:tax|taxes)|all\s+taxes',
+        text, re.IGNORECASE
+    ))
     for pattern in patterns:
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
-            value = float(match.group(1).replace(',', ''))
-            has_tax_note = bool(re.search(
-                r'incl.*?(?:tax|taxes)|inclusive.*?(?:tax|taxes)|all\s+taxes',
-                text, re.IGNORECASE
-            ))
-            return {"value": value, "has_tax_note": has_tax_note, "raw": match.group(0)}
+            try:
+                value = float(match.group(1).replace(',', '.'))
+                if 0.5 <= value <= 100000:
+                    return {"value": value, "has_tax_note": has_tax_note, "raw": f"MRP ₹ {value:.2f}"}
+            except ValueError:
+                continue
+
+    # Fallback: scan lines containing MRP keywords
+    for line in text.split('\n'):
+        if re.search(r'\b(?:MRP|M\.R\.P|Max\.?\s*Retail\s*Price|Retail\s*Price)\b', line, re.IGNORECASE):
+            m = re.search(r'(?:Rs\.?|₹|INR|[?{\[\(<\|~/\\*#])*\s*(\d+[\.,]\d{1,2}|\d+)', line)
+            if m:
+                try:
+                    val = float(m.group(1).replace(',', '.'))
+                    if 0.5 <= val <= 100000:
+                        return {"value": val, "has_tax_note": has_tax_note, "raw": f"MRP ₹ {val:.2f}"}
+                except ValueError:
+                    pass
+
     return None
 
 
@@ -38,7 +55,9 @@ def extract_net_quantity(text: str) -> Optional[dict]:
     for pattern in patterns:
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
-            value = float(match.group(1).replace(',', ''))
+            value = float(match.group(1).replace(',', '.'))
+            if value <= 0:
+                continue
             raw_unit = match.group(2).strip().lower()
             std_unit = valid_units.get(raw_unit, raw_unit)
             return {"value": value, "unit": std_unit, "raw": match.group(0)}
@@ -61,21 +80,21 @@ def extract_manufacturer(text: str) -> Optional[dict]:
                 has_pincode = bool(re.search(r'\b\d{6}\b', addr) or re.search(r'\b\d{6}\b', nearby_text))
                 return {"value": addr, "has_pincode": has_pincode, "raw": match.group(0)}
 
-    # Fallback: scan lines for manufacturer keywords (but NOT "Mfg/Packaging" which is a date field)
     lines = text.split('\n')
+    stop_pattern = r'\b(?:MRP|M\.R\.P|Net\s+Qty|Net\s+Quantity|Best\s+Before|Expiry|Exp\b|Date|Batch|Lot\b|Ingredients|Nutri|FSSAI|Lic|Issai|Consumer|Customer|Toll|Country|Product\s+Name)\b'
+
+    # Fallback: scan lines for manufacturer keywords (but NOT "Mfg/Packaging" which is a date field)
     for i, line in enumerate(lines):
-        # Skip lines that are actually date references
-        if re.search(r'Mfg\s*/?\s*Packag', line, re.IGNORECASE):
+        if re.search(r'Mfg\s*/?\s*Packag|Date\s+of\s+Mfg', line, re.IGNORECASE):
             continue
         if re.search(r'(?:Manufactured|Packed|Packer|Marketed|Imported|Mfd|Pkg)', line, re.IGNORECASE):
             addr_lines = [line]
             for j in range(i + 1, min(i + 6, len(lines))):
-                if re.search(r'^(MRP|M\.R\.P|Net\s+Qty|Best\s+Before|Expiry|Exp\b|Date\s+of|Batch\b|Ingredients)', lines[j], re.IGNORECASE):
+                if re.search(stop_pattern, lines[j], re.IGNORECASE):
                     break
                 addr_lines.append(lines[j])
             addr = ' '.join(addr_lines).strip()
             if len(addr) > 10:
-                # Also check surrounding lines (within 6 lines) for a 6-digit pin code
                 nearby_text = ' '.join(lines[max(0, i-1):min(i+7, len(lines))])
                 has_pincode = bool(re.search(r'\b\d{6}\b', nearby_text))
                 return {"value": addr, "has_pincode": has_pincode, "raw": addr}
@@ -83,10 +102,10 @@ def extract_manufacturer(text: str) -> Optional[dict]:
     # Fallback 2: Look for lines with 6-digit pincode or address keywords (e.g. Plot No, Sector, Pvt Ltd)
     for i, line in enumerate(lines):
         if re.search(r'\b\d{6}\b', line) or re.search(r'\b(?:Plot\s+No|Sector|Pvt|Ltd|Limited)\b', line, re.IGNORECASE):
-            start_idx = max(0, i - 1) if i > 0 and not re.search(r'(MRP|Net|Date|FSSAI|Lic|Consumer|Country|Product)', lines[i-1], re.IGNORECASE) else i
+            start_idx = max(0, i - 1) if i > 0 and not re.search(stop_pattern, lines[i-1], re.IGNORECASE) else i
             addr_lines = []
             for j in range(start_idx, min(i + 4, len(lines))):
-                if re.search(r'^(MRP|Net|Best|Exp|Date\s+of|Batch|Consumer|Country|Product\s+Name|INGREDIENTS)', lines[j], re.IGNORECASE):
+                if j != start_idx and re.search(stop_pattern, lines[j], re.IGNORECASE):
                     break
                 addr_lines.append(lines[j])
             addr = ' '.join(addr_lines).strip()
@@ -100,39 +119,62 @@ def extract_manufacturer(text: str) -> Optional[dict]:
 
 def extract_date_info(text: str) -> Optional[dict]:
     result = {}
+    # Strict date regex: DD/MM/YYYY or MM/YYYY or MonthName YYYY
+    date_val_pattern = r'(?:(?:0?[1-9]|[12]\d|3[01])[\/\-\.](?:0?[1-9]|1[0-2])[\/\-\.](?:20\d{2}|19\d{2}|\d{2})|(?:0?[1-9]|1[0-2])[\/\-\.](?:20\d{2}|19\d{2}|2[0-9])|(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s*[\/\-\.]?\s*(?:20\d{2}|19\d{2}|\d{2}))'
+
+    delim = r'[:\.\-\s\[\(\{\|]*'
     mfg_patterns = [
-        r'(?:Date\s+of\s+Mfg\s*/?\s*Packag(?:ing|e))\s*[:\.]?\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})',
-        r'(?:Mfg\.?\s*(?:Date|Dt\.?)?|Date\s+of\s+(?:Mfg|Manufacture|Manufacturing|Packing|Pkg))\s*[:\.]?\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}|\d{1,2}[\/-]\d{2,4}|[A-Za-z]+[\s,]*\d{2,4})',
-        r'(?:Mfg|MFD|PKD|PKG)\s*[:\.]?\s*(\d{1,2}[\/-]\d{2,4}|[A-Za-z]{3,}\s*[\/-]?\s*\d{2,4})',
+        # Flexible ordering: "Date of Mfg / Packaging", "Mfg Packaging Date of", "Mfg / Pkg Date"
+        r'(?:(?:Date\s+of\s+)?(?:Mfg|Manufactur\w*|Packag\w*|Pack\w*|MFD|PKD)(?:\s*(?:[\/\&]|and|,|\s)\s*(?:Mfg|Manufactur\w*|Packag\w*|Pack\w*|MFD|PKD))*\s*(?:Date\s*(?:of)?)?|(?:Mfg|Packag\w*|Pack\w*)\s*(?:Date\s+of)?|Date\s+of\s+[\w\s\/]+)\s*' + delim + r'(' + date_val_pattern + r')',
+        r'(?:Mfg|MFD|PKD|PKG)\s*' + delim + r'(' + date_val_pattern + r')',
     ]
     exp_patterns = [
-        r'(?:Exp(?:iry)?\.?\s*(?:Date|Dt\.?)?|Best\s+Before|Use\s+Before|Use\s+By|BB)\s*[:\.]?\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}|\d{1,2}[\/-]\d{2,4}|[A-Za-z]+[\s,]*\d{2,4}|\d+\s*(?:months?|days?|years?))',
+        r'(?:Exp(?:iry)?\.?\s*(?:Date|Dt\.?)?|Best\s+Before|Use\s+Before|Use\s+By|BB)\s*(?:[A-Za-z\s]{0,15})?' + delim + r'(' + date_val_pattern + r'|\d+\s*(?:months?|days?|years?))',
     ]
     for pattern in mfg_patterns:
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
-            result["manufacture_date"] = {"value": match.group(1).strip(), "raw": match.group(0)}
+            result["manufacture_date"] = {"value": match.group(1).strip(), "raw": match.group(0).strip()}
             break
     for pattern in exp_patterns:
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
-            result["expiry_date"] = {"value": match.group(1).strip(), "raw": match.group(0)}
+            result["expiry_date"] = {"value": match.group(1).strip(), "raw": match.group(0).strip()}
             break
+
+    # Line-by-line fallback if mfg date still not found
+    if "manufacture_date" not in result:
+        lines = text.split('\n')
+        for idx, line in enumerate(lines):
+            # Skip lines with phone / customer care numbers
+            if re.search(r'\b(?:Toll\s*Free|Helpline|Consumer\s*Care|Customer\s*Care|Phone|Tel\b|Fax\b|Call\s+Us)\b', line, re.IGNORECASE):
+                continue
+            if re.search(r'\b(?:Mfg|Packag\w*|Pack\w*|MFD|PKD|Manufactur\w*)\b', line, re.IGNORECASE):
+                dm = re.search(date_val_pattern, line, re.IGNORECASE)
+                if dm:
+                    result["manufacture_date"] = {"value": dm.group(0).strip(), "raw": line.strip()}
+                    break
+                if idx + 1 < len(lines):
+                    dm_next = re.search(r'^\s*' + delim + r'(' + date_val_pattern + r')\b', lines[idx + 1], re.IGNORECASE)
+                    if dm_next:
+                        result["manufacture_date"] = {"value": dm_next.group(1).strip(), "raw": f"{line.strip()} {lines[idx+1].strip()}"}
+                        break
+
     return result if result else None
 
 
 def extract_consumer_care(text: str) -> Optional[dict]:
     result = {}
-    phone = re.search(r'(?:Consumer\s*Care|Customer\s*Care|Helpline|Toll\s*Free|Contact|Call(?:\s+Us)?(?:\s+At)?)\s*[:\.]?\s*[\+]?[\d\s\-]{7,15}', text, re.IGNORECASE)
+    phone = re.search(r'(?:Consumer\s*Care|Customer\s*Care|Helpline|Toll\s*Free|Contact|Call(?:\s+Us)?(?:\s+At)?)\s*[:\.\-]?\s*([\+]?[\d\s\-]{7,15})', text, re.IGNORECASE)
     if phone:
-        result["phone"] = phone.group(0).strip()
+        result["phone"] = phone.group(1).strip()
+    if not result.get("phone"):
+        phone_any = re.search(r'(?:1800|1860)[\s\-]?(?:\d{2,4}[\s\-]?\d{3,4}|\d{6,7})', text)
+        if phone_any:
+            result["phone"] = phone_any.group(0).strip()
     email = re.search(r'[\w\.\-]+@[\w\.\-]+\.\w+', text)
     if email:
         result["email"] = email.group(0).strip()
-    if not result.get("phone"):
-        phone_only = re.search(r'(?:1800|1860)[\s\-]?(?:\d{2,4}[\s\-]?\d{3,4}|\d{6,7})', text)
-        if phone_only:
-            result["phone"] = phone_only.group(0).strip()
     feedback_match = re.search(r'(?:Consumer\s*(?:Services\s*)?Manager|Feedback\s*(?:or\s*)?Queries|Write\s+to\s*:)', text, re.IGNORECASE)
     if feedback_match and not result.get("details"):
         result["details"] = "Consumer services contact present on package"
@@ -143,22 +185,39 @@ def extract_country_of_origin(text: str) -> Optional[str]:
     patterns = [
         r'(?:Country\s+of\s+Origin|Made\s+in|Product\s+of|Origin)\s*[:\.]?\s*([A-Za-z\s]+)',
     ]
+    known_countries = [
+        'India', 'China', 'Thailand', 'United States', 'USA', 'United Kingdom', 'UK',
+        'Vietnam', 'Indonesia', 'Malaysia', 'Sri Lanka', 'Bangladesh', 'Nepal',
+        'Germany', 'Italy', 'Japan', 'Korea', 'Australia', 'New Zealand', 'France', 'Spain', 'Singapore'
+    ]
     for pattern in patterns:
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
-            return match.group(1).strip()
+            raw_country = match.group(1).strip()
+            for c in known_countries:
+                if re.search(r'\b' + re.escape(c) + r'\b', raw_country, re.IGNORECASE):
+                    return c.upper() if c.upper() in ['USA', 'UK'] else c.title()
+            cleaned = re.split(r'[;:,.\(\)\[\]\{\}\n]', raw_country)[0].strip()
+            words = cleaned.split()
+            if words:
+                return ' '.join(words[:2]).strip()
     return None
 
 
 def extract_common_name(text: str) -> Optional[str]:
     """Extract product name — prefer explicit 'Product Name' field over first line."""
+    def clean_name(val: str) -> str:
+        val = val.strip().rstrip('.,;- ')
+        val = re.sub(r'\s*(?:Agent|Acidity|Anticaking|Emulsifier|Stabilizer|Flavour|Flavor|Preservative|Color|Colour|INS)\b.*$', '', val, flags=re.IGNORECASE)
+        return val.strip().rstrip('.,;- ')
+
     # First try explicit "Product Name" label (common on Indian FMCG products)
     product_name_match = re.search(
         r'(?:Product\s+Name|Name\s+of\s+(?:the\s+)?(?:Product|Commodity|Food))\s*[:\.]?\s*(.+?)(?:\n|$)',
         text, re.IGNORECASE
     )
     if product_name_match:
-        name = product_name_match.group(1).strip()
+        name = clean_name(product_name_match.group(1))
         if len(name) > 2:
             return name
 
@@ -198,18 +257,21 @@ def extract_batch_number(text: str) -> Optional[str]:
     """Extract batch/lot number — handle 'Batch Number' as a two-word label."""
     patterns = [
         # "Batch Number : B5120524A1" or "Batch Number B5120524A1"
-        r'(?:Batch\s+(?:No\.?|Number)|Lot\s+(?:No\.?|Number))\s*[:\.]?\s*([A-Za-z0-9][\w\-\/]+)',
+        r'\b(?:Batch\s+(?:No\.?|Number)|Lot\s+(?:No\.?|Number))\s*[:\.\-\s\[\(\{|]*([A-Za-z0-9][\w\-\/]+)',
         # "B. No. XYZ" or "L. No. XYZ"
-        r'(?:B\.?\s*No\.?|L\.?\s*No\.?)\s*[:\.]?\s*([A-Za-z0-9][\w\-\/]+)',
+        r'\b(?:B\.?\s*No\.?|L\.?\s*No\.?)\s*[:\.\-\s\[\(\{|]*([A-Za-z0-9][\w\-\/]+)',
         # Simple "Batch: XYZ" (only if followed by an alphanumeric batch code, not "Number")
-        r'(?:Batch|Lot)\s*[:\.]?\s*(?!Number|No)([A-Za-z0-9][\w\-\/]+)',
+        r'\b(?:Batch|Lot)\s*[:\.\-\s\[\(\{|]+(?!Number\b|No\b)([A-Za-z0-9][\w\-\/]+)',
     ]
+    invalid_words = {
+        'number', 'no', 'no_', 'batch', 'lot', 'haryana', 'delhi', 'india', 'sector', 'street',
+        'road', 'plot', 'limited', 'pvt', 'mfg', 'date', 'cool', 'place', 'sukf', 'code'
+    }
     for pattern in patterns:
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
-            val = match.group(1).strip()
-            # Sanity check: batch numbers are typically 4+ chars
-            if len(val) >= 4:
+            val = match.group(1).strip().rstrip('.,;- ')
+            if len(val) >= 3 and val.lower() not in invalid_words:
                 return val
     return None
 

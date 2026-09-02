@@ -79,6 +79,61 @@ def generate_pdf_report(
             elements.append(Paragraph("[Image could not be loaded]", body_style))
         elements.append(Spacer(1, 6*mm))
 
+    def format_field_display(field_key: str, val: any) -> str:
+        if val is None:
+            return "NOT FOUND"
+        if field_key == "mrp":
+            if isinstance(val, dict):
+                v = val.get("value")
+                if v is not None:
+                    note = " (incl. of all taxes)" if val.get("has_tax_note") else ""
+                    return f"Rs. {v:.2f}{note}"
+                return str(val.get("raw", val))
+            return str(val)
+        elif field_key == "dates":
+            if isinstance(val, dict):
+                parts = []
+                if "manufacture_date" in val:
+                    mfg = val["manufacture_date"].get("value", "") if isinstance(val["manufacture_date"], dict) else str(val["manufacture_date"])
+                    if mfg:
+                        parts.append(f"Mfg: {mfg}")
+                if "expiry_date" in val:
+                    exp = val["expiry_date"].get("value", "") if isinstance(val["expiry_date"], dict) else str(val["expiry_date"])
+                    if exp:
+                        parts.append(f"Exp: {exp}")
+                if parts:
+                    return " | ".join(parts)
+                return str(val.get("raw", val.get("value", val)))
+            return str(val)
+        elif field_key == "consumer_care":
+            if isinstance(val, dict):
+                parts = []
+                if val.get("phone"):
+                    parts.append(f"Tel: {val['phone']}")
+                if val.get("email"):
+                    parts.append(f"Email: {val['email']}")
+                if not parts and val.get("details"):
+                    parts.append(val["details"])
+                if parts:
+                    return ", ".join(parts)
+                return str(val.get("raw", val.get("value", val)))
+            return str(val)
+        elif field_key == "net_quantity":
+            if isinstance(val, dict):
+                v = val.get("value")
+                u = val.get("unit", "")
+                if v is not None:
+                    return f"{v:g} {u}".strip()
+                return str(val.get("raw", val))
+            return str(val)
+        elif field_key == "manufacturer":
+            if isinstance(val, dict):
+                return str(val.get("value", val.get("raw", val)))
+            return str(val)
+        elif isinstance(val, dict):
+            return str(val.get("value", val.get("raw", val)))
+        return str(val)
+
     elements.append(Paragraph("Extracted Declarations", header_style))
     field_rows = [["Field", "Value", "Status"]]
     field_labels = {
@@ -93,18 +148,19 @@ def generate_pdf_report(
         "fssai_license": "FSSAI License",
     }
     violated_fields = {v["field_name"] for v in violations}
+    cell_style = ParagraphStyle('TableCell', parent=styles['Normal'], fontSize=8.5, leading=11)
+
     for key, label in field_labels.items():
         val = extracted_fields.get(key)
         if val is None:
-            display = "NOT FOUND"
+            display_text = "NOT FOUND"
             status = "MISSING" if key in violated_fields else "N/A"
-        elif isinstance(val, dict):
-            display = val.get("raw", val.get("value", str(val)))
-            status = "VIOLATION" if key in violated_fields else "OK"
         else:
-            display = str(val)
+            display_text = format_field_display(key, val)
             status = "VIOLATION" if key in violated_fields else "OK"
-        field_rows.append([label, str(display)[:60], status])
+
+        val_flowable = Paragraph(display_text, cell_style)
+        field_rows.append([label, val_flowable, status])
 
     field_table = Table(field_rows, colWidths=[4*cm, 8.5*cm, 3.5*cm])
     status_colors = {"OK": colors.HexColor('#38a169'), "MISSING": colors.HexColor('#e53e3e'), "VIOLATION": colors.HexColor('#dd6b20'), "N/A": colors.grey}
