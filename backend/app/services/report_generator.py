@@ -70,6 +70,9 @@ def generate_pdf_report(
     if image_path and os.path.exists(image_path):
         elements.append(Paragraph("Product Image", header_style))
         try:
+            from PIL import Image as PILImage
+            with PILImage.open(image_path) as test_img:
+                test_img.verify()
             img = RLImage(image_path, width=8*cm, height=8*cm, kind='proportional')
             elements.append(img)
         except Exception:

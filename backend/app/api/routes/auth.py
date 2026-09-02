@@ -21,7 +21,13 @@ async def get_current_user(
     user_id = payload.get("sub")
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid token payload")
-    result = await db.execute(select(User).where(User.id == int(user_id)))
+    
+    if isinstance(user_id, int) or (isinstance(user_id, str) and user_id.isdigit()):
+        stmt = select(User).where(User.id == int(user_id))
+    else:
+        stmt = select(User).where(User.email == str(user_id))
+
+    result = await db.execute(stmt)
     user = result.scalar_one_or_none()
     if user is None:
         raise HTTPException(status_code=401, detail="User not found")

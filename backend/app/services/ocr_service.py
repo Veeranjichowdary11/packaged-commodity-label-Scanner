@@ -43,7 +43,25 @@ def _get_easyocr_reader():
 def run_ocr_easyocr(image_path: str) -> dict:
     """Use EasyOCR for text extraction — no system install needed, works offline."""
     reader = _get_easyocr_reader()
-    results = reader.readtext(image_path, detail=1, paragraph=False)
+    img = cv2.imread(image_path)
+    if img is None:
+        return {
+            "text": "",
+            "boxes": [],
+            "confidences": [],
+            "lines": [],
+            "engine": "easyocr",
+            "error": "Could not read image",
+        }
+
+    h, w = img.shape[:2]
+    max_dim = max(h, w)
+    scale = 1.0
+    if max_dim > 800:
+        scale = 800.0 / max_dim
+        img = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+
+    results = reader.readtext(img, detail=1, paragraph=False)
 
     if not results:
         return {
@@ -58,10 +76,11 @@ def run_ocr_easyocr(image_path: str) -> dict:
     boxes = []
     confidences = []
     words = []
+    inv_scale = 1.0 / scale
 
     for (bbox, text, conf) in results:
-        # bbox is [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]
-        boxes.append([[int(p[0]), int(p[1])] for p in bbox])
+        # Scale bounding box back to original image dimensions
+        boxes.append([[int(p[0] * inv_scale), int(p[1] * inv_scale)] for p in bbox])
         confidences.append(float(conf))
         words.append(text)
 
@@ -192,6 +211,8 @@ def run_ocr_tesseract(image_path: str) -> dict:
     }
 
 
+_google_vision_disabled = False
+
 def run_ocr(image_path: str) -> dict:
     """
     Run OCR with fallback chain:
@@ -199,10 +220,11 @@ def run_ocr(image_path: str) -> dict:
       2. EasyOCR (Python-only, no system install needed)
       3. Tesseract (requires system install)
     """
+    global _google_vision_disabled
     api_key = os.environ.get("GOOGLE_VISION_API_KEY", "")
 
     # 1) Try Google Cloud Vision first (most accurate)
-    if api_key:
+    if api_key and not _google_vision_disabled:
         try:
             result = run_ocr_google_vision(image_path, api_key)
             if result.get("text"):
@@ -211,6 +233,11 @@ def run_ocr(image_path: str) -> dict:
             print(f"[OCR] Google Vision returned no text: {result.get('error', 'unknown')}")
         except Exception as e:
             print(f"[OCR] Google Vision failed: {e}")
+            # If billing is disabled or authentication fails, disable for future calls
+            err_str = str(e).lower()
+            if "403" in err_str or "billing" in err_str or "permission" in err_str or "401" in err_str:
+                print("[OCR] Disabling Google Vision for future calls (billing/permission error)")
+                _google_vision_disabled = True
 
     # 2) Try EasyOCR (works offline, no system install)
     try:

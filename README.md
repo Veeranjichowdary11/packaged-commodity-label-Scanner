@@ -14,22 +14,19 @@
 
 Ensuring that packaged commodities comply with consumer protection guidelines and mandatory packaging rules is vital for market transparency. **Janch** automates label scanning, optical character recognition (OCR), multi-field extraction, rule compliance scoring, and formal PDF inspection report generation.
 
----
-
-## ✨ Key Features
-
-- **🔍 Multi-Engine OCR Processing**: Dual-engine text extraction combining OpenCV image preprocessing, Tesseract OCR, and Google Cloud Vision API fallback for maximum accuracy under diverse lighting and printing conditions.
+- **🔍 Multi-Engine OCR Processing**: High-performance offline text extraction powered by **EasyOCR** (PyTorch) with automatic dimension optimization (800px) for fast, responsive CPU inference (~6–15s), with Google Cloud Vision API fallback for maximum accuracy under diverse lighting and printing conditions.
 - **🏷️ Mandatory Declaration Field Extraction**: Automatically parses essential mandatory fields required under Legal Metrology Rules:
-  - Manufacturer / Packer / Importer Name & Address
+  - Manufacturer / Packer / Importer Name & Address (with Indian 6-digit PIN code detection)
   - Country of Origin
-  - Common / Generic Name of Commodity
+  - Common / Generic Name of Commodity (filtered from nutritional tables)
   - Net Quantity & Unit (grams, kg, ml, liters, units, etc.)
   - Month and Year of Manufacture / Packing / Import
   - Maximum Retail Price (MRP inclusive of all taxes)
-  - Consumer Care Details (Phone, Email, Contact Address)
+  - Consumer Care Helpline Details (Toll-Free `1800` numbers, Email, Contact Address)
+  - FSSAI License Number (14 digits)
   - Expiry / Best Before Date & Batch / Lot / Serial Number
 - **⚖️ Automated Rule Engine**: Evaluates extracted data against legal requirements to identify violations, missing mandatory declarations, formatting errors, and illegal price overcharges.
-- **📄 PDF Inspection Report Generator**: Generates formatted, downloadable compliance audit certificates complete with scan metadata, extracted parameters, detected non-compliances, and official disclaimers.
+- **📄 PDF Inspection Report Generator**: Generates formatted, downloadable compliance audit certificates complete with scan metadata, extracted parameters, detected non-compliances, and SHA-256 hash-chained verification.
 - **📊 Real-time Dashboard & Analytics**: Interactive web application featuring scan statistics, compliance percentages, recent audit histories, manufacturer search, and product verification databases.
 - **📷 Live Camera & Barcode Scanner**: Built-in browser camera feed with barcode & QR code scanning using Quagga and React-Webcam integration.
 
@@ -44,7 +41,7 @@ Ensuring that packaged commodities comply with consumer protection guidelines an
                        |   Report Viewer, Analytics)   |
                        +---------------+---------------+
                                        |
-                                HTTP / REST API
+                     Direct REST API (127.0.0.1:8000)
                                        |
                        +---------------+---------------+
                        |       FastAPI Backend         |
@@ -54,8 +51,8 @@ Ensuring that packaged commodities comply with consumer protection guidelines an
             |                          |                           |
 +-----------v-----------+  +-----------v-----------+  +------------v-----------+
 |  OCR & Vision Service |  |   Compliance Engine   |  |   Report Generator     |
-| (OpenCV + Tesseract / |  | (Rules Verification & |  |  (ReportLab PDF &      |
-| Google Vision API)    |  |  Anomaly Detection)   |  |   Barcode Encoding)    |
+| (EasyOCR + PyTorch /  |  | (Rules Verification & |  |  (ReportLab PDF &      |
+| Google Vision API)    |  |  Anomaly Detection)   |  |   SHA-256 Hash Chain)  |
 +-----------------------+  +-----------------------+  +------------------------+
             |                          |                           |
             +------------------+       |       +-------------------+
@@ -74,7 +71,7 @@ Ensuring that packaged commodities comply with consumer protection guidelines an
 - **Framework**: [FastAPI](https://fastapi.tiangolo.com/) (Python 3.10+)
 - **Database & ORM**: SQLAlchemy (Async Engine), SQLite (`aiosqlite`)
 - **Security & Authentication**: OAuth2 with Password Hashing (`bcrypt`), JWT (`python-jose`)
-- **Computer Vision & OCR**: OpenCV (`opencv-python-headless`), Tesseract OCR (`pytesseract`), Pillow, Google Cloud Vision API
+- **Computer Vision & OCR**: EasyOCR (PyTorch), OpenCV (`opencv-python-headless`), Pillow, Google Cloud Vision API
 - **Barcode & PDF Generation**: `pyzbar`, `python-barcode`, `ReportLab`
 
 ### Frontend
@@ -82,6 +79,7 @@ Ensuring that packaged commodities comply with consumer protection guidelines an
 - **Styling**: Tailwind CSS, Lucide React icons
 - **Data Visualization**: Recharts
 - **Media & Hardware**: React Webcam, Quagga JS Barcode Reader
+- **HTTP Client**: Axios with direct CORS configuration
 
 ---
 
@@ -116,28 +114,26 @@ SIH/
 
 ## 🚀 Getting Started
 
+> **Important**: The application requires **BOTH** the Backend and the Frontend to run simultaneously in two separate terminal windows.
+
 ### Prerequisites
 
 Ensure you have the following installed on your system:
 - **Python**: `v3.10` or higher
 - **Node.js**: `v18.0` or higher & `npm`
-- **Tesseract OCR**: Installed on your system path (optional for Google Vision fallback)
-  - *Windows*: Download installer from [UB-Mannheim Tesseract](https://github.com/UB-Mannheim/tesseract/wiki)
-  - *Linux*: `sudo apt-get install tesseract-ocr`
-  - *macOS*: `brew install tesseract`
 
 ---
 
-### 1. Backend Setup
+### Step 1: Start the Backend (Terminal 1)
 
-1. Navigate to the backend directory:
+1. Open your first terminal and navigate to the `backend` directory:
    ```bash
    cd backend
    ```
 
-2. Create a virtual environment and activate it:
-   - **Windows**:
-     ```bash
+2. Create a virtual environment (if not already created) and activate it:
+   - **Windows (PowerShell)**:
+     ```powershell
      python -m venv venv
      .\venv\Scripts\activate
      ```
@@ -147,37 +143,33 @@ Ensure you have the following installed on your system:
      source venv/bin/activate
      ```
 
-3. Install backend dependencies:
+3. Install dependencies:
    ```bash
    pip install -r requirements.txt
    ```
 
-4. Configure environment variables:
-   ```bash
-   cp .env.example .env
-   ```
+4. Start the FastAPI backend server:
+   - **Windows**:
+     ```powershell
+     .\venv\Scripts\uvicorn.exe main:app --port 8000 --reload
+     ```
+   - **Linux / macOS**:
+     ```bash
+     uvicorn main:app --port 8000 --reload
+     ```
 
-5. Run database seed (optional for sample products & manufacturers):
-   ```bash
-   python seed.py
-   ```
-
-6. Start the FastAPI development server:
-   ```bash
-   uvicorn main:app --reload --port 8000
-   ```
-   The backend API will be live at `http://localhost:8000`. Interactive API Docs are available at `http://localhost:8000/docs`.
+   *The backend will be live at `http://127.0.0.1:8000`. Interactive Swagger API Docs are accessible at `http://127.0.0.1:8000/docs`.*
 
 ---
 
-### 2. Frontend Setup
+### Step 2: Start the Frontend (Terminal 2)
 
-1. Open a new terminal and navigate to the frontend directory:
+1. Open a second terminal and navigate to the `frontend` directory:
    ```bash
    cd frontend
    ```
 
-2. Install Node dependencies:
+2. Install Node.js dependencies:
    ```bash
    npm install
    ```
@@ -187,13 +179,16 @@ Ensure you have the following installed on your system:
    npm run dev
    ```
 
-4. Access the web dashboard at `http://localhost:3000`.
+4. Open your browser and go to:
+   ```
+   http://localhost:3000
+   ```
 
 ---
 
 ## ⚙️ Environment Variables
 
-Create a `.env` file in the `backend/` directory (or use root `.env`):
+Create a `.env` file in the `backend/` directory:
 
 ```env
 APP_NAME="Janch - Legal Metrology Compliance Checker"
@@ -206,8 +201,8 @@ ACCESS_TOKEN_EXPIRE_MINUTES=480
 UPLOAD_DIR="uploads"
 REPORTS_DIR="reports"
 MAX_UPLOAD_SIZE=10485760
-CORS_ORIGINS=["http://localhost:3000","http://localhost:5173"]
-GOOGLE_VISION_API_KEY="your_google_cloud_vision_api_key_here"
+CORS_ORIGINS=["http://localhost:3000","http://127.0.0.1:3000"]
+GOOGLE_VISION_API_KEY="your_google_cloud_vision_api_key_here"  # Optional (falls back to EasyOCR)
 ```
 
 ---
@@ -219,13 +214,13 @@ GOOGLE_VISION_API_KEY="your_google_cloud_vision_api_key_here"
 | `POST` | `/api/auth/register` | Register a new inspector / officer account |
 | `POST` | `/api/auth/login` | Authenticate user and receive JWT access token |
 | `GET` | `/api/auth/me` | Fetch current authenticated profile |
-| `POST` | `/api/scans/` | Upload package label image for OCR & compliance audit |
-| `GET` | `/api/scans/` | List past scan history with pagination |
+| `POST` | `/api/scans` | Upload package label image for OCR & compliance audit |
+| `GET` | `/api/scans` | List past scan history with pagination |
 | `GET` | `/api/scans/{id}` | Retrieve scan details and extracted fields |
 | `GET` | `/api/scans/{id}/report` | Download generated PDF compliance report |
 | `GET` | `/api/dashboard/stats` | Fetch overall compliance statistics & metrics |
-| `GET` | `/api/products/` | Query product database & verify packaging details |
-| `GET` | `/api/manufacturer/` | Search manufacturers & compliance index |
+| `GET` | `/api/products` | Query product database & verify packaging details |
+| `GET` | `/api/manufacturer` | Search manufacturers & compliance index |
 
 ---
 

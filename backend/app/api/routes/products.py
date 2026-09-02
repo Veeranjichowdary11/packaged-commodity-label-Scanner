@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, or_
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, or_  # type: ignore # pyrefly: ignore
+from sqlalchemy.ext.asyncio import AsyncSession  # type: ignore # pyrefly: ignore
 from typing import Optional
 
 from app.core.database import get_db
@@ -12,6 +12,7 @@ router = APIRouter(prefix="/products", tags=["Products"])
 
 
 @router.get("/", response_model=list[ProductResponse])
+@router.get("", response_model=list[ProductResponse])
 async def search_products(
     q: Optional[str] = Query(None, description="Search by name, brand or barcode"),
     skip: int = 0,

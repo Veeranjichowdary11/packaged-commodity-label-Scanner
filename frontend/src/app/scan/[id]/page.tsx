@@ -15,7 +15,7 @@ export default function ScanResultPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (id) {
+    if (id && !isNaN(Number(id))) {
       scanAPI.get(Number(id)).then(res => { setScan(res.data); setLoading(false); })
         .catch(() => { toast.error('Scan not found'); setLoading(false); });
     }

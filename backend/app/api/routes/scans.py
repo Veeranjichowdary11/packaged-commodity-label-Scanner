@@ -17,6 +17,8 @@ from app.services.field_extractor import extract_all_fields
 from app.services.compliance_engine import check_compliance
 from app.services.report_generator import generate_report_number, generate_pdf_report, compute_hash
 
+from starlette.concurrency import run_in_threadpool
+
 settings = Settings()
 router = APIRouter(prefix="/scans", tags=["Scanning"])
 
@@ -35,7 +37,14 @@ async def create_scan(
     user: User = Depends(get_current_user),
 ):
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-    ext = os.path.splitext(image.filename)[1] if image.filename else ".jpg"
+    ext = os.path.splitext(image.filename)[1].lower() if image.filename else ".jpg"
+    valid_extensions = [".jpg", ".jpeg", ".png", ".webp", ".bmp"]
+    if ext not in valid_extensions:
+        if image.content_type and image.content_type.startswith("image/"):
+            ext = ".jpg"
+        else:
+            raise HTTPException(status_code=400, detail="Invalid file type. Please upload an image (JPG, PNG, WebP).")
+
     filename = f"{uuid.uuid4().hex}{ext}"
     filepath = os.path.join(settings.UPLOAD_DIR, filename)
 
@@ -46,11 +55,11 @@ async def create_scan(
     with open(filepath, "wb") as f:
         f.write(content)
 
-    ocr_result = run_ocr(filepath)
+    ocr_result = await run_in_threadpool(run_ocr, filepath)
     raw_text = ocr_result.get("text", "")
     extracted_fields = extract_all_fields(raw_text)
 
-    barcode_detected = barcode or detect_barcode(filepath)
+    barcode_detected = barcode or await run_in_threadpool(detect_barcode, filepath)
 
     product = None
     if barcode_detected:
@@ -115,7 +124,8 @@ async def create_scan(
         "longitude": longitude,
     }
 
-    pdf_path = generate_pdf_report(
+    pdf_path = await run_in_threadpool(
+        generate_pdf_report,
         scan_data=scan_data,
         violations=compliance["violations"],
         extracted_fields=extracted_fields,
@@ -143,6 +153,7 @@ async def create_scan(
 
 
 @router.get("/", response_model=list[ScanResponse])
+@router.get("", response_model=list[ScanResponse])
 async def list_scans(
     skip: int = 0,
     limit: int = 20,
@@ -176,7 +187,7 @@ async def get_scan(
     scan = result.scalar_one_or_none()
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
-    if user.role.value in ("consumer", "manufacturer") and scan.user_id != user.id:
+    if user.role.value in ("consumer", "manufacturer") and getattr(scan, "user_id", None) != getattr(user, "id", None):
         raise HTTPException(status_code=403, detail="Not authorized")
     return ScanResponse.model_validate(scan)
 
@@ -191,11 +202,15 @@ async def download_report(
 
     result = await db.execute(select(Report).where(Report.scan_id == scan_id))
     report = result.scalar_one_or_none()
-    if not report or not report.pdf_path:
+    if not report:
         raise HTTPException(status_code=404, detail="Report not found")
 
+    pdf_path: Optional[str] = getattr(report, "pdf_path", None)
+    if not pdf_path or not os.path.exists(pdf_path):
+        raise HTTPException(status_code=404, detail="Report file not found")
+
     return FileResponse(
-        report.pdf_path,
+        pdf_path,
         media_type="application/pdf",
         filename=f"{report.report_number}.pdf",
     )

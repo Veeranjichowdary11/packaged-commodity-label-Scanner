@@ -25,7 +25,14 @@ async def check_label_compliance(
     user: User = Depends(get_current_user),
 ):
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-    ext = os.path.splitext(image.filename)[1] if image.filename else ".jpg"
+    ext = os.path.splitext(image.filename)[1].lower() if image.filename else ".jpg"
+    valid_extensions = [".jpg", ".jpeg", ".png", ".webp", ".bmp"]
+    if ext not in valid_extensions:
+        if image.content_type and image.content_type.startswith("image/"):
+            ext = ".jpg"
+        else:
+            raise HTTPException(status_code=400, detail="Invalid file type. Please upload an image (JPG, PNG, WebP).")
+
     filename = f"mfg_{uuid.uuid4().hex}{ext}"
     filepath = os.path.join(settings.UPLOAD_DIR, filename)
 

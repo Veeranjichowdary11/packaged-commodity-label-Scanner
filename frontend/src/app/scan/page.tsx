@@ -60,6 +60,7 @@ export default function ScanPage() {
   }, []);
 
   const submitScan = async (scanType: string) => {
+    if (loading) return;
     if (!file) { toast.error('No image selected'); return; }
     const token = localStorage.getItem('token');
     if (!token) { toast.error('Session expired — please log in again'); router.push('/login'); return; }
@@ -81,8 +82,24 @@ export default function ScanPage() {
       if (err.response?.status === 401) {
         toast.error('Session expired — please log in again');
         router.push('/login');
+      } else if (err.response?.status === 500 || err.code === 'ERR_NETWORK') {
+        const detail = err.response?.data?.detail;
+        if (detail) {
+          toast.error(typeof detail === 'string' ? detail : JSON.stringify(detail));
+        } else {
+          toast.error('Cannot connect to backend server. Make sure FastAPI is running on port 8000.');
+        }
       } else {
-        toast.error(err.response?.data?.detail || 'Scan failed');
+        const detail = err.response?.data?.detail;
+        let msg = err.response?.data?.message || err.message || 'Scan failed';
+        if (typeof detail === 'string') {
+          msg = detail;
+        } else if (Array.isArray(detail)) {
+          msg = detail.map((d: any) => (typeof d === 'string' ? d : d.msg || JSON.stringify(d))).join(', ');
+        } else if (detail && typeof detail === 'object') {
+          msg = detail.msg || JSON.stringify(detail);
+        }
+        toast.error(msg);
       }
     }
     setLoading(false);

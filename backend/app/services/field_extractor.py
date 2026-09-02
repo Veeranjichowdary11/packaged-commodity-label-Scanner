@@ -57,7 +57,8 @@ def extract_manufacturer(text: str) -> Optional[dict]:
         if match:
             addr = match.group(1).strip().rstrip(',.- ')
             if len(addr) > 10:
-                has_pincode = bool(re.search(r'\b\d{6}\b', addr))
+                nearby_text = text[max(0, match.start() - 50):min(len(text), match.end() + 350)]
+                has_pincode = bool(re.search(r'\b\d{6}\b', addr) or re.search(r'\b\d{6}\b', nearby_text))
                 return {"value": addr, "has_pincode": has_pincode, "raw": match.group(0)}
 
     # Fallback: scan lines for manufacturer keywords (but NOT "Mfg/Packaging" which is a date field)
@@ -66,15 +67,17 @@ def extract_manufacturer(text: str) -> Optional[dict]:
         # Skip lines that are actually date references
         if re.search(r'Mfg\s*/?\s*Packag', line, re.IGNORECASE):
             continue
-        if re.search(r'(?:Manufactured|Packed|Packer|Marketed|Imported)', line, re.IGNORECASE):
+        if re.search(r'(?:Manufactured|Packed|Packer|Marketed|Imported|Mfd|Pkg)', line, re.IGNORECASE):
             addr_lines = [line]
-            for j in range(i + 1, min(i + 4, len(lines))):
-                if re.search(r'(MRP|Net|Best|Exp|Date|Batch|FSSAI|Consumer|Country|Product\s+Name)', lines[j], re.IGNORECASE):
+            for j in range(i + 1, min(i + 6, len(lines))):
+                if re.search(r'^(MRP|M\.R\.P|Net\s+Qty|Best\s+Before|Expiry|Exp\b|Date\s+of|Batch\b|Ingredients)', lines[j], re.IGNORECASE):
                     break
                 addr_lines.append(lines[j])
             addr = ' '.join(addr_lines).strip()
             if len(addr) > 10:
-                has_pincode = bool(re.search(r'\b\d{6}\b', addr))
+                # Also check surrounding lines (within 6 lines) for a 6-digit pin code
+                nearby_text = ' '.join(lines[max(0, i-1):min(i+7, len(lines))])
+                has_pincode = bool(re.search(r'\b\d{6}\b', nearby_text))
                 return {"value": addr, "has_pincode": has_pincode, "raw": addr}
 
     # Fallback 2: Look for lines with 6-digit pincode or address keywords (e.g. Plot No, Sector, Pvt Ltd)
@@ -82,13 +85,14 @@ def extract_manufacturer(text: str) -> Optional[dict]:
         if re.search(r'\b\d{6}\b', line) or re.search(r'\b(?:Plot\s+No|Sector|Pvt|Ltd|Limited)\b', line, re.IGNORECASE):
             start_idx = max(0, i - 1) if i > 0 and not re.search(r'(MRP|Net|Date|FSSAI|Lic|Consumer|Country|Product)', lines[i-1], re.IGNORECASE) else i
             addr_lines = []
-            for j in range(start_idx, min(i + 3, len(lines))):
-                if re.search(r'(MRP|Net|Best|Exp|Date\s+of|Batch|FSSAI|Lic|Consumer|Country|Product\s+Name|INGREDIENTS)', lines[j], re.IGNORECASE):
+            for j in range(start_idx, min(i + 4, len(lines))):
+                if re.search(r'^(MRP|Net|Best|Exp|Date\s+of|Batch|Consumer|Country|Product\s+Name|INGREDIENTS)', lines[j], re.IGNORECASE):
                     break
                 addr_lines.append(lines[j])
             addr = ' '.join(addr_lines).strip()
             if len(addr) > 10:
-                has_pincode = bool(re.search(r'\b\d{6}\b', addr))
+                nearby_text = ' '.join(lines[max(0, i-1):min(i+5, len(lines))])
+                has_pincode = bool(re.search(r'\b\d{6}\b', nearby_text))
                 return {"value": addr, "has_pincode": has_pincode, "raw": addr}
 
     return None
@@ -119,16 +123,19 @@ def extract_date_info(text: str) -> Optional[dict]:
 
 def extract_consumer_care(text: str) -> Optional[dict]:
     result = {}
-    phone = re.search(r'(?:Consumer\s*Care|Customer\s*Care|Helpline|Toll\s*Free|Contact)\s*[:\.]?\s*[\+]?[\d\s\-]{7,15}', text, re.IGNORECASE)
+    phone = re.search(r'(?:Consumer\s*Care|Customer\s*Care|Helpline|Toll\s*Free|Contact|Call(?:\s+Us)?(?:\s+At)?)\s*[:\.]?\s*[\+]?[\d\s\-]{7,15}', text, re.IGNORECASE)
     if phone:
         result["phone"] = phone.group(0).strip()
     email = re.search(r'[\w\.\-]+@[\w\.\-]+\.\w+', text)
     if email:
         result["email"] = email.group(0).strip()
-    if not result:
-        phone_only = re.search(r'(?:1800|1860)[\s\-]?\d{3}[\s\-]?\d{3,4}', text)
+    if not result.get("phone"):
+        phone_only = re.search(r'(?:1800|1860)[\s\-]?(?:\d{2,4}[\s\-]?\d{3,4}|\d{6,7})', text)
         if phone_only:
             result["phone"] = phone_only.group(0).strip()
+    feedback_match = re.search(r'(?:Consumer\s*(?:Services\s*)?Manager|Feedback\s*(?:or\s*)?Queries|Write\s+to\s*:)', text, re.IGNORECASE)
+    if feedback_match and not result.get("details"):
+        result["details"] = "Consumer services contact present on package"
     return result if result else None
 
 
@@ -155,15 +162,32 @@ def extract_common_name(text: str) -> Optional[str]:
         if len(name) > 2:
             return name
 
-    # Fallback: use first non-numeric, non-MRP line
+    # Next check for common FMCG product categories
+    prod_pattern = r'\b(Potato\s+Chips|Chips|Biscuits|Cookies|Namkeen|Noodles|Snacks|Tea|Coffee|Chocolate|Atta|Wheat\s+Flour|Rice|Cooking\s+Oil|Edible\s+Oil|Spices?|Masala)\b'
+    if re.search(prod_pattern, text, re.IGNORECASE):
+        for line in text.split('\n'):
+            line_clean = line.strip().strip('"\'')
+            m = re.search(prod_pattern, line_clean, re.IGNORECASE)
+            if m and len(line_clean.split()) <= 6:
+                if len(line_clean.split()) > 3:
+                    return m.group(1).title()
+                return line_clean.title()
+
+    # Fallback: use first non-numeric, non-MRP, non-nutritional line
     for line in text.strip().split('\n'):
         line = line.strip()
         if not line or len(line) < 3:
             continue
-        # Skip lines that are clearly field labels/values
-        if re.match(r'^(MRP|M\.R\.P|Net|Date|Batch|FSSAI|Consumer|Country|Manufacturer|Ingredients)', line, re.IGNORECASE):
+        # Skip lines that are clearly field labels/values or nutritional facts
+        if re.match(r'^(MRP|M\.R\.P|Net|Date|Batch|FSSAI|Lic|Consumer|Country|Manufacturer|Ingredients|Nutri|Energy|Protein|Fat|Carb|Sugar|Sodium|Approx|Values|Per|Serving|IMUTR)', line, re.IGNORECASE):
+            continue
+        if re.search(r'\b(kcal|kJ|mcg|mg)\b', line, re.IGNORECASE):
+            continue
+        if re.search(r'\d', line) and len(line.split()) <= 2:
             continue
         if re.match(r'^[\d\s\W]+$', line):
+            continue
+        if len(line.split()) > 7:
             continue
         return line
 

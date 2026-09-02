@@ -17,7 +17,12 @@ class Settings(BaseSettings):
     REPORTS_DIR: str = "reports"
     MAX_UPLOAD_SIZE: int = 10_485_760  # 10MB
 
-    CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:5173"]
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+    ]
 
     GOOGLE_VISION_API_KEY: str = ""
 
