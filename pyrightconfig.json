@@ -1,0 +1,8 @@
+{
+  "extraPaths": [
+    "backend",
+    "C:/Users/saige/AppData/Roaming/Python/Python314/site-packages"
+  ],
+  "reportMissingImports": "none",
+  "reportMissingModuleSource": "none"
+}

@@ -1,0 +1,9 @@
+{
+  "search_paths": [
+    "backend",
+    "C:/Users/saige/AppData/Roaming/Python/Python314/site-packages"
+  ],
+  "disabled_rules": [
+    "missing-import"
+  ]
+}
