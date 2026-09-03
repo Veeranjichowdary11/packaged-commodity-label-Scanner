@@ -41,7 +41,7 @@ export default function Navbar() {
           <div className="flex items-center">
             <Link href="/scan" className="flex items-center gap-2">
               <Shield className="h-8 w-8 text-primary-600" />
-              <span className="text-xl font-bold text-gray-900">जाँच</span>
+              <span className="text-xl font-bold text-gray-900">Packaged Commodity Label Scanner</span>
             </Link>
             <div className="hidden md:flex ml-10 space-x-1">
               {links.map(({ href, label, icon: Icon }) => (

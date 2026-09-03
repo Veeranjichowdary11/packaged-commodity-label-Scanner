@@ -51,11 +51,11 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 via-white to-blue-50 px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <Link href="/" className="inline-flex items-center gap-2 mb-4">
-            <Shield className="h-10 w-10 text-primary-600" />
-            <span className="text-3xl font-bold text-gray-900">जाँच</span>
+          <Link href="/" className="inline-flex items-center gap-2 mb-4 text-center justify-center">
+            <Shield className="h-10 w-10 text-primary-600 flex-shrink-0" />
+            <span className="text-2xl font-bold text-gray-900">Packaged Commodity Label Scanner</span>
           </Link>
-          <p className="text-gray-500">Legal Metrology Compliance Checker</p>
+          <p className="text-gray-500">Legal Metrology Compliance & Inspection System</p>
         </div>
 
         <div className="bg-white rounded-2xl shadow-xl p-8 border border-gray-100">

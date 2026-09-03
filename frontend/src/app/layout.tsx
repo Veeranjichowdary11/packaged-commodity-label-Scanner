@@ -7,7 +7,7 @@ import { Toaster } from 'react-hot-toast';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Janch (जाँच) - AI Legal Metrology Compliance',
+  title: 'Packaged Commodity Label Scanner',
   description: 'AI-powered packaged commodity label compliance checker under Legal Metrology (Packaged Commodities) Rules, 2011',
 };
 

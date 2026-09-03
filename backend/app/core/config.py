@@ -3,7 +3,7 @@ from typing import Optional
 
 
 class Settings(BaseSettings):
-    APP_NAME: str = "Janch - Legal Metrology Compliance Checker"
+    APP_NAME: str = "Packaged Commodity Label Scanner"
     VERSION: str = "1.0.0"
     DEBUG: bool = True
 

@@ -41,7 +41,7 @@ def generate_pdf_report(
     header_style = ParagraphStyle('Header', parent=styles['Heading2'], fontSize=13, textColor=colors.HexColor('#2d3748'), spaceAfter=6)
     body_style = ParagraphStyle('Body', parent=styles['Normal'], fontSize=10, spaceAfter=4)
 
-    elements.append(Paragraph("JANCH - Compliance Inspection Report", title_style))
+    elements.append(Paragraph("Packaged Commodity Label Scanner - Inspection Report", title_style))
     elements.append(Paragraph("Legal Metrology (Packaged Commodities) Rules, 2011", ParagraphStyle('Sub', parent=styles['Normal'], fontSize=10, alignment=TA_CENTER, textColor=colors.grey)))
     elements.append(Spacer(1, 8*mm))
 

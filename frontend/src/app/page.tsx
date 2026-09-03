@@ -18,7 +18,7 @@ export default function LandingPage() {
       <nav className="flex items-center justify-between px-6 py-4 max-w-7xl mx-auto">
         <div className="flex items-center gap-2">
           <Shield className="h-9 w-9 text-primary-600" />
-          <span className="text-2xl font-bold text-gray-900">जाँच <span className="text-sm font-normal text-gray-500">Janch</span></span>
+          <span className="text-2xl font-bold text-gray-900">Packaged Commodity <span className="text-primary-600">Label Scanner</span></span>
         </div>
         <Link href="/login" className="px-5 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors">
           Login
@@ -30,7 +30,7 @@ export default function LandingPage() {
           <Shield className="h-4 w-4" /> Smart India Hackathon 2024
         </div>
         <h1 className="text-5xl md:text-6xl font-bold text-gray-900 mb-6 leading-tight">
-          AI-Powered <span className="text-primary-600">Legal Metrology</span><br />Compliance Checker
+          Packaged Commodity <br /><span className="text-primary-600">Label Scanner</span>
         </h1>
         <p className="text-xl text-gray-600 max-w-2xl mx-auto mb-10">
           Scan any packaged commodity label, extract mandatory declarations with AI,
@@ -44,7 +44,7 @@ export default function LandingPage() {
       </section>
 
       <section className="max-w-7xl mx-auto px-6 pb-20">
-        <h2 className="text-3xl font-bold text-center text-gray-900 mb-12">What Makes Janch Unique</h2>
+        <h2 className="text-3xl font-bold text-center text-gray-900 mb-12">What Makes Our Scanner Unique</h2>
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
           {features.map((f) => (
             <div key={f.title} className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
