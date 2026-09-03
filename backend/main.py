@@ -40,8 +40,13 @@ app.include_router(dashboard.router, prefix="/api")
 app.include_router(products.router, prefix="/api")
 app.include_router(manufacturer.router, prefix="/api")
 
+# Ensure directories exist before mounting static files (needed on fresh clones)
+os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+os.makedirs(settings.REPORTS_DIR, exist_ok=True)
+
 app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
 app.mount("/reports", StaticFiles(directory=settings.REPORTS_DIR), name="reports")
+
 
 
 @app.get("/")

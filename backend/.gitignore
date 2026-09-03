@@ -2,8 +2,10 @@ __pycache__/
 *.py[cod]
 *.db
 .env
-uploads/
-reports/
+uploads/*
+!uploads/.gitkeep
+reports/*
+!reports/.gitkeep
 *.egg-info/
 dist/
 build/
