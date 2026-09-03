@@ -57,8 +57,8 @@ def run_ocr_easyocr(image_path: str) -> dict:
     h, w = img.shape[:2]
     max_dim = max(h, w)
     scale = 1.0
-    if max_dim > 800:
-        scale = 800.0 / max_dim
+    if max_dim > 1600:
+        scale = 1600.0 / max_dim
         img = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
 
     results = reader.readtext(img, detail=1, paragraph=False)

@@ -277,10 +277,16 @@ def extract_batch_number(text: str) -> Optional[str]:
 
 
 def extract_fssai(text: str) -> Optional[str]:
-    match = re.search(r'(?:FSSAI|Lic\.?\s*No\.?|License\s*No\.?)\s*[:\.]?\s*(\d{14})', text, re.IGNORECASE)
+    # Match explicit FSSAI or Lic No label followed by optional punctuation and 14 digits
+    match = re.search(r'(?:FSSAI|Lic(?:ense)?[\s\.;:\-]*No[\.;:\-]*)[\s\.;:\-,\(\[\{]*(\d{14})', text, re.IGNORECASE)
     if match:
         return match.group(1).strip()
-    fssai_only = re.search(r'\b(\d{14})\b', text)
+    # Match 14-digit number starting with 1 or 2 (standard Indian FSSAI license prefix)
+    fssai_structured = re.search(r'(?<!\d)([12]\d{13})(?!\d)', text)
+    if fssai_structured:
+        return fssai_structured.group(1).strip()
+    # General fallback for any isolated 14-digit number
+    fssai_only = re.search(r'(?<!\d)(\d{14})(?!\d)', text)
     if fssai_only:
         return fssai_only.group(1).strip()
     return None
