@@ -114,24 +114,67 @@ async def create_scan(
 
     primary_image_path = saved_images[0]["path"]
     raw_text = "\n\n".join(ocr_sections) if ocr_sections else ""
-    extracted_fields = extract_all_fields(raw_text)
 
+    # Master Product Resolution & Cross-Verification
     product = None
+    master_product_dict = None
     if barcode_detected:
+        barcode_detected = barcode_detected.strip()
         result = await db.execute(select(Product).where(Product.barcode == barcode_detected))
         product = result.scalar_one_or_none()
-        if not product:
-            product = Product(
-                barcode=barcode_detected,
-                name=extracted_fields.get("common_name"),
-                manufacturer_name=extracted_fields.get("manufacturer", {}).get("value") if isinstance(extracted_fields.get("manufacturer"), dict) else None,
-                net_quantity=extracted_fields.get("net_quantity", {}).get("raw") if isinstance(extracted_fields.get("net_quantity"), dict) else None,
-                mrp=extracted_fields.get("mrp", {}).get("value") if isinstance(extracted_fields.get("mrp"), dict) else None,
-            )
-            db.add(product)
-            await db.flush()
+        
+        if product and (product.name or product.mrp or product.net_quantity):
+            master_product_dict = {
+                "barcode": product.barcode,
+                "name": product.name,
+                "brand": product.brand,
+                "net_quantity": product.net_quantity,
+                "mrp": product.mrp,
+                "manufacturer_name": product.manufacturer_name,
+                "source": "Central Legal Metrology Database",
+            }
+        else:
+            # Query Open Food Facts public registry
+            from app.api.routes.products import fetch_open_food_facts
+            off_data = await fetch_open_food_facts(barcode_detected)
+            if off_data:
+                master_product_dict = {
+                    "barcode": barcode_detected,
+                    "name": off_data.get("name"),
+                    "brand": off_data.get("brand"),
+                    "net_quantity": off_data.get("net_quantity"),
+                    "mrp": None,
+                    "manufacturer_name": off_data.get("brand"),
+                    "source": "Open Food Facts Global Registry",
+                }
+                if not product:
+                    product = Product(
+                        barcode=barcode_detected,
+                        name=off_data.get("name"),
+                        brand=off_data.get("brand"),
+                        net_quantity=off_data.get("net_quantity"),
+                    )
+                    db.add(product)
+                    await db.flush()
 
-    compliance = check_compliance(extracted_fields)
+    extracted_fields = extract_all_fields(raw_text, master_product=master_product_dict)
+
+    # If product record didn't exist, create it with extracted fields as fallback
+    if barcode_detected and not product:
+        product = Product(
+            barcode=barcode_detected,
+            name=extracted_fields.get("common_name"),
+            manufacturer_name=extracted_fields.get("manufacturer", {}).get("value") if isinstance(extracted_fields.get("manufacturer"), dict) else None,
+            net_quantity=extracted_fields.get("net_quantity", {}).get("raw") if isinstance(extracted_fields.get("net_quantity"), dict) else None,
+            mrp=extracted_fields.get("mrp", {}).get("value") if isinstance(extracted_fields.get("mrp"), dict) else None,
+        )
+        db.add(product)
+        await db.flush()
+
+    compliance = check_compliance(extracted_fields, master_product=master_product_dict)
+
+    if compliance.get("barcode_audit"):
+        extracted_fields["barcode_audit"] = compliance["barcode_audit"]
 
     scan = Scan(
         user_id=user.id,
@@ -178,6 +221,9 @@ async def create_scan(
         "store_name": store_name,
         "latitude": latitude,
         "longitude": longitude,
+        "barcode": barcode_detected,
+        "master_product": master_product_dict,
+        "barcode_audit": compliance.get("barcode_audit"),
     }
 
     pdf_path = await run_in_threadpool(

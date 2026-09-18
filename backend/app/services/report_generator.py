@@ -52,6 +52,8 @@ def generate_pdf_report(
         ["Compliance Status:", scan_data.get("compliance_status", "Pending").upper()],
         ["Score:", f"{scan_data.get('compliance_score', 0)}%"],
     ]
+    if scan_data.get("barcode"):
+        meta_data.append(["Barcode (GTIN):", str(scan_data["barcode"])])
     if scan_data.get("store_name"):
         meta_data.append(["Store:", scan_data["store_name"]])
     if scan_data.get("latitude") and scan_data.get("longitude"):
@@ -65,7 +67,62 @@ def generate_pdf_report(
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
     ]))
     elements.append(meta_table)
-    elements.append(Spacer(1, 6*mm))
+    elements.append(Spacer(1, 5*mm))
+
+    # Barcode Cross-Verification Audit Block
+    audit = scan_data.get("barcode_audit")
+    if audit:
+        elements.append(Paragraph("Barcode Cross-Verification Audit", header_style))
+        is_matched = audit.get("status") == "MATCHED"
+        status_color = "#38a169" if is_matched else "#e53e3e"
+        status_text = "AUTHENTIC & VERIFIED" if is_matched else "MISMATCH / DISCREPANCY DETECTED"
+
+        audit_summary = [
+            ["Registered GTIN:", str(audit.get("barcode", "N/A"))],
+            ["Database Master:", f"{audit.get('master_name', '')} {f'({audit.get('master_brand')})' if audit.get('master_brand') else ''}".strip()],
+            ["Registered Volume:", str(audit.get("master_net_quantity") or "N/A")],
+            ["Database Registry:", str(audit.get("source", "Central Legal Metrology Database"))],
+            ["Audit Status:", status_text],
+        ]
+        audit_table = Table(audit_summary, colWidths=[4*cm, 12*cm])
+        audit_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+            ('TEXTCOLOR', (1, 4), (1, 4), colors.HexColor(status_color)),
+            ('FONTNAME', (1, 4), (1, 4), 'Helvetica-Bold'),
+        ]))
+        elements.append(audit_table)
+        elements.append(Spacer(1, 4*mm))
+
+        if audit.get("checks"):
+            check_rows = [["Verification Check", "Master Specification", "Found on Carton", "Status"]]
+            for c in audit["checks"]:
+                check_rows.append([
+                    c.get("field", ""),
+                    Paragraph(str(c.get("expected", "-")), ParagraphStyle('P_Exp', parent=styles['Normal'], fontSize=8)),
+                    Paragraph(str(c.get("found", "-")), ParagraphStyle('P_Fnd', parent=styles['Normal'], fontSize=8)),
+                    c.get("status", "")
+                ])
+            c_table = Table(check_rows, colWidths=[4*cm, 4.5*cm, 4.5*cm, 3*cm])
+            c_style = [
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2d3748')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 8),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e2e8f0')),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+                ('TOPPADDING', (0, 0), (-1, -1), 3),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]
+            for ri, row in enumerate(check_rows[1:], 1):
+                st = row[3]
+                c_color = colors.HexColor('#38a169') if st == 'MATCHED' else colors.HexColor('#e53e3e')
+                c_style.append(('TEXTCOLOR', (3, ri), (3, ri), c_color))
+                c_style.append(('FONTNAME', (3, ri), (3, ri), 'Helvetica-Bold'))
+            c_table.setStyle(TableStyle(c_style))
+            elements.append(c_table)
+            elements.append(Spacer(1, 5*mm))
 
     if image_path and os.path.exists(image_path):
         elements.append(Paragraph("Product Image", header_style))
@@ -73,11 +130,11 @@ def generate_pdf_report(
             from PIL import Image as PILImage
             with PILImage.open(image_path) as test_img:
                 test_img.verify()
-            img = RLImage(image_path, width=8*cm, height=8*cm, kind='proportional')
+            img = RLImage(image_path, width=7*cm, height=7*cm, kind='proportional')
             elements.append(img)
         except Exception:
             elements.append(Paragraph("[Image could not be loaded]", body_style))
-        elements.append(Spacer(1, 6*mm))
+        elements.append(Spacer(1, 5*mm))
 
     def format_field_display(field_key: str, val: any) -> str:
         if val is None:

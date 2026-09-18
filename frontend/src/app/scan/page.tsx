@@ -244,6 +244,10 @@ export default function ScanPage() {
       fd.append('image_labels', JSON.stringify(labels));
       fd.append('scan_type', scanType);
 
+      if (barcode && barcode.trim()) {
+        fd.append('barcode', barcode.trim());
+      }
+
       if (location) {
         fd.append('latitude', String(location.lat));
         fd.append('longitude', String(location.lng));
@@ -519,40 +523,70 @@ export default function ScanPage() {
               </button>
             </div>
 
-            {/* Location & Store Metadata */}
+            {/* Barcode & Metadata */}
             <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
-              <div className="flex items-center justify-between">
-                <button 
-                  type="button" 
-                  onClick={getLocation} 
-                  className="flex items-center gap-2 text-sm text-primary-600 hover:text-primary-700 font-medium"
-                >
-                  <MapPin className="h-4 w-4" />
-                  {location ? `Location: ${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}` : 'Add GPS Location (for field crowdsourcing)'}
-                </button>
-                {location && (
-                  <span className="text-xs text-green-600 font-medium">GPS Active</span>
-                )}
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                  <QrCode className="h-4 w-4 text-primary-600" />
+                  Product Barcode / GTIN (Optional)
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="e.g. 8901764175022 (Cross-verifies against Central Registry & Open Food Facts)"
+                    value={barcode}
+                    onChange={e => setBarcode(e.target.value)}
+                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                  />
+                  {barcode && (
+                    <button
+                      type="button"
+                      onClick={() => setBarcode('')}
+                      className="px-3 py-2 text-xs text-gray-500 hover:text-gray-700 border border-gray-200 rounded-lg"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <p className="text-[11px] text-gray-500 mt-1">
+                  Enables instant cross-verification of product name, declared MRP, and net volume against registered standards.
+                </p>
               </div>
 
-              {location && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                  <input 
-                    type="text" 
-                    placeholder="Store / Retailer name" 
-                    value={storeName} 
-                    onChange={e => setStoreName(e.target.value)}
-                    className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none" 
-                  />
-                  <input 
-                    type="text" 
-                    placeholder="Store address or market" 
-                    value={storeAddress} 
-                    onChange={e => setStoreAddress(e.target.value)}
-                    className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none" 
-                  />
+              <div className="border-t border-gray-100 pt-3">
+                <div className="flex items-center justify-between">
+                  <button 
+                    type="button" 
+                    onClick={getLocation} 
+                    className="flex items-center gap-2 text-sm text-primary-600 hover:text-primary-700 font-medium"
+                  >
+                    <MapPin className="h-4 w-4" />
+                    {location ? `Location: ${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}` : 'Add GPS Location (for field crowdsourcing)'}
+                  </button>
+                  {location && (
+                    <span className="text-xs text-green-600 font-medium">GPS Active</span>
+                  )}
                 </div>
-              )}
+
+                {location && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                    <input 
+                      type="text" 
+                      placeholder="Store / Retailer name" 
+                      value={storeName} 
+                      onChange={e => setStoreName(e.target.value)}
+                      className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none" 
+                    />
+                    <input 
+                      type="text" 
+                      placeholder="Store address or market" 
+                      value={storeAddress} 
+                      onChange={e => setStoreAddress(e.target.value)}
+                      className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none" 
+                    />
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Submit Bar */}

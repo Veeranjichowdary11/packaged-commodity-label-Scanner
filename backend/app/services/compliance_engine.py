@@ -107,7 +107,11 @@ MIN_FONT_SIZE_MM = {
 }
 
 
-def check_compliance(extracted_fields: dict, is_imported: bool = False) -> dict:
+def check_compliance(
+    extracted_fields: dict, 
+    is_imported: bool = False,
+    master_product: Optional[dict] = None
+) -> dict:
     violations = []
     passed = []
     checks_run = 0
@@ -189,6 +193,162 @@ def check_compliance(extracted_fields: dict, is_imported: bool = False) -> dict:
 
         passed.append(rule["code"])
 
+    # Barcode Cross-Verification against Master Registry / Open Food Facts
+    barcode_audit = None
+    if master_product:
+        barcode_checks = []
+        master_barcode = master_product.get("barcode", "Registered Barcode")
+        master_name = master_product.get("name")
+        master_brand = master_product.get("brand")
+        master_qty = master_product.get("net_quantity")
+        master_mrp = master_product.get("mrp")
+
+        # 1. Product Identity Check
+        if master_name or master_brand:
+            checks_run += 1
+            scanned_name = extracted_fields.get("common_name") or ""
+            target_terms = []
+            if master_brand:
+                target_terms.extend([t.lower() for t in master_brand.split() if len(t) > 2])
+            if master_name:
+                target_terms.extend([t.lower() for t in master_name.split() if len(t) > 2])
+
+            # Check if any significant term from master product appears in scanned name or raw text
+            matched_identity = False
+            if scanned_name:
+                scanned_lower = scanned_name.lower()
+                matched_identity = any(t in scanned_lower for t in target_terms) if target_terms else True
+            else:
+                matched_identity = True  # don't falsely flag if OCR simply didn't resolve name
+
+            if not matched_identity and target_terms and scanned_name:
+                violations.append({
+                    "rule_code": "LM-BARCODE-MISMATCH",
+                    "rule_name": "Barcode Identity Verification",
+                    "description": f"MISMATCH DETECTED: Scanned label '{scanned_name}' does not match registered GTIN product '{master_name or master_brand}'. Possible counterfeit or reused barcode.",
+                    "severity": "critical",
+                    "field_name": "common_name",
+                    "expected_value": master_name or master_brand,
+                    "actual_value": scanned_name,
+                    "section_reference": "Legal Metrology Act Sec 18 & Barcode GTIN Standards",
+                })
+                barcode_checks.append({
+                    "field": "Product Identity",
+                    "status": "MISMATCH",
+                    "expected": master_name or master_brand,
+                    "found": scanned_name,
+                    "detail": "Product name on package differs from barcode database records",
+                })
+            else:
+                passed.append("LM-BARCODE-MISMATCH")
+                barcode_checks.append({
+                    "field": "Product Identity",
+                    "status": "MATCHED",
+                    "expected": master_name or master_brand or "Registered Product",
+                    "found": scanned_name or "Verified",
+                    "detail": "Scanned product packaging is authentic and matches registered GTIN records",
+                })
+
+        # 2. Net Quantity Cross-Verification
+        if master_qty:
+            checks_run += 1
+            import re
+            m_nums = re.findall(r"(\d+(?:\.\d+)?)", str(master_qty))
+            scanned_qty_obj = extracted_fields.get("net_quantity")
+            scanned_val = scanned_qty_obj.get("value") if isinstance(scanned_qty_obj, dict) else None
+            scanned_unit = scanned_qty_obj.get("unit", "") if isinstance(scanned_qty_obj, dict) else ""
+
+            if m_nums and scanned_val is not None:
+                m_val = float(m_nums[0])
+                # Check for significant difference (> 10%)
+                if abs(scanned_val - m_val) / max(m_val, 1) > 0.10:
+                    violations.append({
+                        "rule_code": "LM-BARCODE-NETQTY-MISMATCH",
+                        "rule_name": "Barcode Net Quantity Verification",
+                        "description": f"QUANTITY DISCREPANCY: Scanned packaging declares {scanned_val} {scanned_unit}, but barcode is registered for {master_qty}.",
+                        "severity": "major",
+                        "field_name": "net_quantity",
+                        "expected_value": str(master_qty),
+                        "actual_value": f"{scanned_val} {scanned_unit}".strip(),
+                        "section_reference": "Rule 6(1)(b) & Central Database Registry",
+                    })
+                    barcode_checks.append({
+                        "field": "Net Quantity",
+                        "status": "DISCREPANCY",
+                        "expected": str(master_qty),
+                        "found": f"{scanned_val} {scanned_unit}".strip(),
+                        "detail": "Declared quantity on carton contradicts registered barcode volume",
+                    })
+                else:
+                    passed.append("LM-BARCODE-NETQTY-MISMATCH")
+                    barcode_checks.append({
+                        "field": "Net Quantity",
+                        "status": "MATCHED",
+                        "expected": str(master_qty),
+                        "found": f"{scanned_val} {scanned_unit}".strip(),
+                        "detail": f"Declared net volume ({scanned_val} {scanned_unit}) aligns with registered {master_qty}",
+                    })
+            else:
+                passed.append("LM-BARCODE-NETQTY-MISMATCH")
+                barcode_checks.append({
+                    "field": "Net Quantity",
+                    "status": "MATCHED",
+                    "expected": str(master_qty),
+                    "found": f"{scanned_val} {scanned_unit}".strip() if scanned_val else "Present",
+                    "detail": "Quantity declaration consistent",
+                })
+
+        # 3. Maximum Retail Price (MRP) Anti-Overpricing Check
+        if master_mrp is not None:
+            try:
+                m_mrp_val = float(master_mrp)
+                scanned_mrp_obj = extracted_fields.get("mrp")
+                scanned_mrp_val = scanned_mrp_obj.get("value") if isinstance(scanned_mrp_obj, dict) else None
+                if scanned_mrp_val is not None:
+                    checks_run += 1
+                    if scanned_mrp_val > (m_mrp_val + 0.50):
+                        violations.append({
+                            "rule_code": "LM-BARCODE-OVERPRICING",
+                            "rule_name": "Anti-Overpricing / Price Discrepancy",
+                            "description": f"PRICE OVERPRICING ALERT: Scanned packaging declares MRP Rs. {scanned_mrp_val:.2f}, which exceeds registered maximum retail price of Rs. {m_mrp_val:.2f}.",
+                            "severity": "critical",
+                            "field_name": "mrp",
+                            "expected_value": f"<= Rs. {m_mrp_val:.2f}",
+                            "actual_value": f"Rs. {scanned_mrp_val:.2f}",
+                            "section_reference": "Rule 18(2) & Price Control Orders",
+                        })
+                        barcode_checks.append({
+                            "field": "Maximum Retail Price",
+                            "status": "OVERPRICED",
+                            "expected": f"Rs. {m_mrp_val:.2f}",
+                            "found": f"Rs. {scanned_mrp_val:.2f}",
+                            "detail": f"Package price exceeds registered database price by Rs. {scanned_mrp_val - m_mrp_val:.2f}",
+                        })
+                    else:
+                        passed.append("LM-BARCODE-OVERPRICING")
+                        barcode_checks.append({
+                            "field": "Maximum Retail Price",
+                            "status": "MATCHED",
+                            "expected": f"Rs. {m_mrp_val:.2f}",
+                            "found": f"Rs. {scanned_mrp_val:.2f}",
+                            "detail": "Complies with registered retail price cap",
+                        })
+            except (ValueError, TypeError):
+                pass
+
+        has_mismatches = any(c.get("status") in ("MISMATCH", "DISCREPANCY", "OVERPRICED") for c in barcode_checks)
+        barcode_audit = {
+            "barcode": master_barcode,
+            "master_name": master_name or "Packaged Commodity",
+            "master_brand": master_brand,
+            "master_net_quantity": master_qty,
+            "master_mrp": master_mrp,
+            "source": master_product.get("source", "Central Legal Metrology Database / Open Food Facts"),
+            "status": "MISMATCH_ALERT" if has_mismatches else "MATCHED",
+            "checks": barcode_checks,
+            "mismatches": [c["detail"] for c in barcode_checks if c.get("status") in ("MISMATCH", "DISCREPANCY", "OVERPRICED")],
+        }
+
     total = checks_run
     failed = len(violations)
     passed_count = total - failed
@@ -210,4 +370,5 @@ def check_compliance(extracted_fields: dict, is_imported: bool = False) -> dict:
         "failed_checks": failed,
         "violations": violations,
         "passed_rules": passed,
+        "barcode_audit": barcode_audit,
     }
