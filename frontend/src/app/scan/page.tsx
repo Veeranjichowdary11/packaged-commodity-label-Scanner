@@ -41,7 +41,7 @@ interface ImageSlot {
 const INITIAL_SLOTS: ImageSlot[] = [
   { 
     id: 'front', 
-    label: 'Front Panel', 
+    label: 'Image 1 (Front Panel)', 
     description: 'Brand name, product name, net quantity', 
     file: null, 
     preview: null, 
@@ -49,21 +49,21 @@ const INITIAL_SLOTS: ImageSlot[] = [
   },
   { 
     id: 'back', 
-    label: 'Back Panel', 
+    label: 'Image 2 (Back Panel)', 
     description: 'MRP, mfg/exp date, manufacturer info, customer care', 
     file: null, 
     preview: null 
   },
   { 
     id: 'left', 
-    label: 'Left Side', 
+    label: 'Image 3 (Side Panel 1)', 
     description: 'Ingredients, nutritional facts, storage directions', 
     file: null, 
     preview: null 
   },
   { 
     id: 'right', 
-    label: 'Right Side', 
+    label: 'Image 4 (Side Panel 2 / Barcode)', 
     description: 'Barcode, batch number, FSSAI / registration marks', 
     file: null, 
     preview: null 
@@ -143,10 +143,11 @@ export default function ScanPage() {
     while (fileIdx < files.length) {
       const file = files[fileIdx];
       if (file.size <= 10 * 1024 * 1024) {
+        const slotNum = updatedSlots.length + extraSlots.length + 1;
         extraSlots.push({
           id: `angle_${Date.now()}_${fileIdx}`,
-          label: `Angle ${updatedSlots.length + extraSlots.length + 1}`,
-          description: 'Additional product angle',
+          label: `Image ${slotNum} (Additional Angle)`,
+          description: 'Additional product angle or details',
           file,
           preview: URL.createObjectURL(file),
         });
@@ -173,7 +174,7 @@ export default function ScanPage() {
     const count = slots.length + 1;
     const newSlot: ImageSlot = {
       id: `custom_${Date.now()}`,
-      label: `Angle ${count}`,
+      label: `Image ${count} (Additional Angle)`,
       description: 'Additional angle or label panel',
       file: null,
       preview: null,
@@ -519,7 +520,7 @@ export default function ScanPage() {
                 onClick={addCustomAngle}
                 className="px-4 py-2 border border-gray-300 rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-100 flex items-center gap-1.5 transition-colors"
               >
-                <Plus className="h-4 w-4" /> Add Another Product Angle (Top, Bottom, etc.)
+                <Plus className="h-4 w-4" /> Add Another Image / Angle (Top, Bottom, etc.)
               </button>
             </div>
 
