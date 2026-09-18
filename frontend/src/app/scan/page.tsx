@@ -19,7 +19,8 @@ import {
   AlertTriangle,
   Globe,
   Database,
-  Package
+  Package,
+  Download
 } from 'lucide-react';
 import { scanAPI, productAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -303,6 +304,30 @@ export default function ScanPage() {
       toast.error(err.response?.data?.detail || 'Product verification lookup failed');
     }
     setLoading(false);
+  };
+
+  const [downloadingReport, setDownloadingReport] = useState(false);
+
+  const downloadBarcodeReport = async () => {
+    if (!barcodeResult?.product?.barcode) return;
+    const bcode = barcodeResult.product.barcode;
+    setDownloadingReport(true);
+    try {
+      const res = await productAPI.report(bcode);
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `barcode-verification-${bcode}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success('Verification Report downloaded!');
+    } catch (err: any) {
+      toast.error('Failed to generate verification PDF');
+    }
+    setDownloadingReport(false);
   };
 
   const tabs = [
@@ -844,8 +869,22 @@ export default function ScanPage() {
                         )}
                       </div>
 
-                      {/* Jump to Scan Action */}
-                      <div className="mt-4 flex justify-end">
+                      {/* Action Buttons */}
+                      <div className="mt-4 flex flex-wrap items-center justify-end gap-2.5">
+                        <button
+                          type="button"
+                          onClick={downloadBarcodeReport}
+                          disabled={downloadingReport}
+                          className="px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-lg text-xs font-medium flex items-center gap-1.5 shadow-sm transition-colors"
+                        >
+                          {downloadingReport ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Download className="h-3.5 w-3.5 text-primary-600" />
+                          )}
+                          {downloadingReport ? 'Generating Certificate...' : 'Download Verification Report (PDF)'}
+                        </button>
+
                         <button
                           type="button"
                           onClick={() => {

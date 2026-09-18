@@ -64,6 +64,7 @@ export const productAPI = {
   search: (q: string) => api.get('/products', { params: { q } }),
   getByBarcode: (barcode: string) => api.get(`/products/${barcode}`),
   verify: (barcode: string) => api.get(`/products/${barcode}/verify`),
+  report: (barcode: string) => api.get(`/products/${barcode}/report`, { responseType: 'blob' }),
 };
 
 export const manufacturerAPI = {

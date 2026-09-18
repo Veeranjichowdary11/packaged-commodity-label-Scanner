@@ -1,13 +1,19 @@
+import os
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy import select, or_  # type: ignore # pyrefly: ignore
 from sqlalchemy.ext.asyncio import AsyncSession  # type: ignore # pyrefly: ignore
 from typing import Optional
 
 from app.core.database import get_db
+from app.core.config import Settings
 from app.models.models import User, Product, Scan
 from app.schemas.schemas import ProductResponse, ScanResponse
 from app.api.routes.auth import get_current_user
+from app.services.report_generator import generate_report_number, generate_barcode_verification_pdf
 
+settings = Settings()
 router = APIRouter(prefix="/products", tags=["Products"])
 
 
@@ -180,3 +186,34 @@ async def verify_against_database(
         "barcode": barcode,
         "message": "Product barcode not registered in local database or Open Food Facts. You can scan its label to register it.",
     }
+
+
+@router.get("/{barcode}/report")
+async def download_barcode_report(
+    barcode: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    verification_data = await verify_against_database(barcode, db, user)
+    if not verification_data.get("found"):
+        raise HTTPException(status_code=404, detail="Barcode not found in registry")
+
+    report_number = generate_report_number()
+    pdf_path = await run_in_threadpool(
+        generate_barcode_verification_pdf,
+        barcode=barcode,
+        product_data=verification_data,
+        output_dir=settings.REPORTS_DIR,
+        report_number=report_number,
+        image_url=verification_data.get("image_url"),
+    )
+
+    if not os.path.exists(pdf_path):
+        raise HTTPException(status_code=500, detail="Failed to generate verification report")
+
+    return FileResponse(
+        pdf_path,
+        media_type="application/pdf",
+        filename=f"barcode-verification-{barcode}.pdf",
+    )
+
