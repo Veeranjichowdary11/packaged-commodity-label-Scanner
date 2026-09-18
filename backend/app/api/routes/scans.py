@@ -224,6 +224,7 @@ async def create_scan(
         "barcode": barcode_detected,
         "master_product": master_product_dict,
         "barcode_audit": compliance.get("barcode_audit"),
+        "image_paths": saved_images,
     }
 
     pdf_path = await run_in_threadpool(
@@ -234,6 +235,7 @@ async def create_scan(
         image_path=primary_image_path,
         output_dir=settings.REPORTS_DIR,
         report_number=report_number,
+        image_paths=saved_images,
     )
 
     report = Report(
@@ -309,7 +311,51 @@ async def download_report(
 
     pdf_path: Optional[str] = getattr(report, "pdf_path", None)
     if not pdf_path or not os.path.exists(pdf_path):
-        raise HTTPException(status_code=404, detail="Report file not found")
+        scan_res = await db.execute(
+            select(Scan).options(selectinload(Scan.violations)).where(Scan.id == scan_id)
+        )
+        scan = scan_res.scalar_one_or_none()
+        if scan:
+            status_val = scan.compliance_status.value if hasattr(scan.compliance_status, "value") else str(scan.compliance_status)
+            scan_data = {
+                "scan_id": scan.id,
+                "compliance_status": status_val,
+                "compliance_score": scan.compliance_score,
+                "scan_type": scan.scan_type,
+                "store_name": scan.store_name,
+                "latitude": scan.latitude,
+                "longitude": scan.longitude,
+                "barcode": scan.barcode_detected,
+                "barcode_audit": (scan.extracted_fields or {}).get("barcode_audit"),
+                "image_paths": scan.image_paths,
+            }
+            v_dicts = [
+                {
+                    "rule_code": v.rule_code,
+                    "rule_name": v.rule_name,
+                    "description": v.description,
+                    "severity": v.severity.value if hasattr(v.severity, "value") else str(v.severity),
+                    "field_name": v.field_name,
+                    "expected_value": v.expected_value,
+                    "actual_value": v.actual_value,
+                    "section_reference": v.section_reference,
+                }
+                for v in scan.violations
+            ]
+            pdf_path = await run_in_threadpool(
+                generate_pdf_report,
+                scan_data=scan_data,
+                violations=v_dicts,
+                extracted_fields=scan.extracted_fields or {},
+                image_path=scan.image_path or "",
+                output_dir=settings.REPORTS_DIR,
+                report_number=report.report_number,
+                image_paths=scan.image_paths,
+            )
+            report.pdf_path = pdf_path
+            await db.commit()
+        else:
+            raise HTTPException(status_code=404, detail="Report file not found")
 
     return FileResponse(
         pdf_path,

@@ -26,9 +26,10 @@ def generate_pdf_report(
     scan_data: dict,
     violations: list,
     extracted_fields: dict,
-    image_path: str,
-    output_dir: str,
-    report_number: str,
+    image_path: str = "",
+    output_dir: str = "",
+    report_number: str = "",
+    image_paths: list = None,
 ) -> str:
     os.makedirs(output_dir, exist_ok=True)
     pdf_path = os.path.join(output_dir, f"{report_number}.pdf")
@@ -124,17 +125,89 @@ def generate_pdf_report(
             elements.append(c_table)
             elements.append(Spacer(1, 5*mm))
 
-    if image_path and os.path.exists(image_path):
-        elements.append(Paragraph("Product Image", header_style))
-        try:
-            from PIL import Image as PILImage
-            with PILImage.open(image_path) as test_img:
-                test_img.verify()
-            img = RLImage(image_path, width=7*cm, height=7*cm, kind='proportional')
-            elements.append(img)
-        except Exception:
-            elements.append(Paragraph("[Image could not be loaded]", body_style))
-        elements.append(Spacer(1, 5*mm))
+    # Product Images (Single image or multi-panel grid)
+    if image_paths is None:
+        image_paths = scan_data.get("image_paths")
+
+    all_images = []
+    if image_paths and isinstance(image_paths, list):
+        for item in image_paths:
+            if isinstance(item, dict):
+                p = item.get("path")
+                lbl = item.get("label") or "Product Panel"
+            else:
+                p = str(item)
+                lbl = "Product Panel"
+            if p and os.path.exists(p):
+                all_images.append({"path": p, "label": lbl})
+    elif image_path and os.path.exists(image_path):
+        all_images.append({"path": image_path, "label": "Primary Panel"})
+
+    if all_images:
+        caption_style = ParagraphStyle(
+            'ImgCaption',
+            parent=styles['Normal'],
+            fontSize=8,
+            leading=10,
+            alignment=TA_CENTER,
+            textColor=colors.HexColor('#2d3748')
+        )
+        title_text = "Product Image" if len(all_images) == 1 else f"Scanned Product Panels ({len(all_images)})"
+        elements.append(Paragraph(title_text, header_style))
+
+        from PIL import Image as PILImage
+
+        if len(all_images) == 1:
+            img_entry = all_images[0]
+            try:
+                with PILImage.open(img_entry["path"]) as test_img:
+                    test_img.verify()
+                img = RLImage(img_entry["path"], width=6.5*cm, height=6.5*cm, kind='proportional')
+                elements.append(img)
+                elements.append(Spacer(1, 1*mm))
+                elements.append(Paragraph(f"<b>{img_entry['label']}</b>", caption_style))
+            except Exception:
+                elements.append(Paragraph("[Image could not be loaded]", body_style))
+            elements.append(Spacer(1, 5*mm))
+        else:
+            cols = 3 if len(all_images) == 3 else 2
+            col_width = (17.5 / cols) * cm
+            img_max_size = 4.2 * cm if cols == 3 else 5.2 * cm
+
+            table_data = []
+            row = []
+            for item in all_images:
+                cell_flowables = []
+                try:
+                    with PILImage.open(item["path"]) as test_img:
+                        test_img.verify()
+                    rl_img = RLImage(item["path"], width=img_max_size, height=img_max_size, kind='proportional')
+                    cell_flowables.append(rl_img)
+                except Exception:
+                    cell_flowables.append(Paragraph("[Image unavailable]", caption_style))
+                cell_flowables.append(Spacer(1, 1*mm))
+                cell_flowables.append(Paragraph(f"<b>{item['label']}</b>", caption_style))
+                row.append(cell_flowables)
+
+                if len(row) == cols:
+                    table_data.append(row)
+                    row = []
+            if row:
+                while len(row) < cols:
+                    row.append([Paragraph("", caption_style)])
+                table_data.append(row)
+
+            grid_table = Table(table_data, colWidths=[col_width] * cols)
+            grid_table.setStyle(TableStyle([
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 3),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+                ('TOPPADDING', (0, 0), (-1, -1), 3),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ]))
+            elements.append(grid_table)
+            elements.append(Spacer(1, 5*mm))
 
     def format_field_display(field_key: str, val: any) -> str:
         if val is None:
