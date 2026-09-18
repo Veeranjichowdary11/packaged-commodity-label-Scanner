@@ -288,14 +288,41 @@ def estimate_font_sizes(image_path: str, boxes: list) -> list:
 
 
 def detect_barcode(image_path: str) -> Optional[str]:
-    """Detect and decode barcodes in the image."""
+    """Detect and decode barcodes in the image using multiple engines (OpenCV + pyzbar fallback)."""
+    # 1. OpenCV BarcodeDetector (EAN-13, UPC, Code 128, etc. - works natively on Windows/Linux)
+    try:
+        detector = cv2.barcode.BarcodeDetector()
+        img = cv2.imread(image_path)
+        if img is not None:
+            res = detector.detectAndDecode(img)
+            if res and isinstance(res, (tuple, list)) and len(res) > 0 and res[0]:
+                code = str(res[0]).strip()
+                if code and len(code) >= 6:
+                    return code
+    except Exception:
+        pass
+
+    # 2. OpenCV QRCodeDetector (for QR codes)
+    try:
+        qr_detector = cv2.QRCodeDetector()
+        img = cv2.imread(image_path)
+        if img is not None:
+            data, _, _ = qr_detector.detectAndDecode(img)
+            if data and data.strip():
+                return data.strip()
+    except Exception:
+        pass
+
+    # 3. pyzbar fallback (if C++ runtime DLLs are available)
     try:
         from pyzbar.pyzbar import decode
 
-        img = Image.open(image_path)
-        barcodes = decode(img)
-        if barcodes:
-            return barcodes[0].data.decode("utf-8")
+        with Image.open(image_path) as pimg:
+            barcodes = decode(pimg)
+            if barcodes:
+                return barcodes[0].data.decode("utf-8")
     except Exception:
         pass
+
     return None
+
