@@ -76,6 +76,7 @@ class Scan(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
     image_path = Column(String(500), nullable=False)
+    image_paths = Column(JSON, nullable=True)
     scan_type = Column(String(50), default="manual")  # manual, live_camera, crowdsource
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)

@@ -66,6 +66,7 @@ class ScanResponse(BaseModel):
     user_id: int
     product_id: Optional[int]
     image_path: str
+    image_paths: Optional[list[dict]] = None
     scan_type: str
     latitude: Optional[float]
     longitude: Optional[float]

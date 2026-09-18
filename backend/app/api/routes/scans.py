@@ -26,7 +26,9 @@ router = APIRouter(prefix="/scans", tags=["Scanning"])
 @router.post("/", response_model=ScanResponse)
 @router.post("", response_model=ScanResponse)
 async def create_scan(
-    image: UploadFile = File(...),
+    images: list[UploadFile] = File(default=[]),
+    image: Optional[UploadFile] = File(None),
+    image_labels: Optional[str] = Form(None),
     scan_type: str = Form("manual"),
     latitude: Optional[float] = Form(None),
     longitude: Optional[float] = Form(None),
@@ -37,29 +39,82 @@ async def create_scan(
     user: User = Depends(get_current_user),
 ):
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-    ext = os.path.splitext(image.filename)[1].lower() if image.filename else ".jpg"
+
+    # Parse labels if provided
+    labels = []
+    if image_labels:
+        try:
+            parsed = json.loads(image_labels)
+            if isinstance(parsed, list):
+                labels = [str(x) for x in parsed]
+        except Exception:
+            labels = [l.strip() for l in image_labels.split(",") if l.strip()]
+
+    # Collect files to process
+    files_to_process: list[tuple[UploadFile, str]] = []
+    if images and len(images) > 0:
+        for idx, img in enumerate(images):
+            if img.filename:
+                lbl = labels[idx] if idx < len(labels) else f"Angle {idx + 1}"
+                files_to_process.append((img, lbl))
+
+    # Backward compatibility with single 'image' field
+    if not files_to_process and image and image.filename:
+        lbl = labels[0] if labels else "Front"
+        files_to_process.append((image, lbl))
+
+    if not files_to_process:
+        raise HTTPException(status_code=400, detail="No image provided. Please upload at least one product label photo.")
+
     valid_extensions = [".jpg", ".jpeg", ".png", ".webp", ".bmp"]
-    if ext not in valid_extensions:
-        if image.content_type and image.content_type.startswith("image/"):
-            ext = ".jpg"
-        else:
-            raise HTTPException(status_code=400, detail="Invalid file type. Please upload an image (JPG, PNG, WebP).")
+    saved_images: list[dict] = []
+    ocr_sections: list[str] = []
+    barcode_detected = barcode
 
-    filename = f"{uuid.uuid4().hex}{ext}"
-    filepath = os.path.join(settings.UPLOAD_DIR, filename)
+    for img, label in files_to_process:
+        ext = os.path.splitext(img.filename)[1].lower() if img.filename else ".jpg"
+        if ext not in valid_extensions:
+            if img.content_type and img.content_type.startswith("image/"):
+                ext = ".jpg"
+            else:
+                continue
 
-    content = await image.read()
-    if len(content) > settings.MAX_UPLOAD_SIZE:
-        raise HTTPException(status_code=413, detail="File too large (max 10MB)")
+        filename = f"{uuid.uuid4().hex}{ext}"
+        filepath = os.path.join(settings.UPLOAD_DIR, filename)
 
-    with open(filepath, "wb") as f:
-        f.write(content)
+        content = await img.read()
+        if len(content) > settings.MAX_UPLOAD_SIZE:
+            raise HTTPException(status_code=413, detail=f"File '{img.filename}' too large (max 10MB)")
 
-    ocr_result = await run_in_threadpool(run_ocr, filepath)
-    raw_text = ocr_result.get("text", "")
+        with open(filepath, "wb") as f:
+            f.write(content)
+
+        # Store with web-friendly forward slashes
+        web_path = filepath.replace("\\", "/")
+        saved_images.append({
+            "label": label,
+            "path": web_path,
+            "filename": filename,
+        })
+
+        # Run OCR on this image angle
+        ocr_result = await run_in_threadpool(run_ocr, filepath)
+        angle_text = ocr_result.get("text", "").strip()
+        if angle_text:
+            ocr_sections.append(f"--- [{label.upper()}] ---\n{angle_text}")
+
+        # Check for barcode if not yet detected
+        if not barcode_detected:
+            detected = await run_in_threadpool(detect_barcode, filepath)
+            if detected:
+                barcode_detected = detected
+
+    if not saved_images:
+        raise HTTPException(status_code=400, detail="Invalid file type(s). Please upload images (JPG, PNG, WebP).")
+
+    primary_image_path = saved_images[0]["path"]
+    raw_text = "\n\n".join(ocr_sections) if ocr_sections else ""
     extracted_fields = extract_all_fields(raw_text)
-
-    barcode_detected = barcode or await run_in_threadpool(detect_barcode, filepath)
 
     product = None
     if barcode_detected:
@@ -81,7 +136,8 @@ async def create_scan(
     scan = Scan(
         user_id=user.id,
         product_id=product.id if product else None,
-        image_path=filepath,
+        image_path=primary_image_path,
+        image_paths=saved_images,
         scan_type=scan_type,
         latitude=latitude,
         longitude=longitude,
@@ -129,7 +185,7 @@ async def create_scan(
         scan_data=scan_data,
         violations=compliance["violations"],
         extracted_fields=extracted_fields,
-        image_path=filepath,
+        image_path=primary_image_path,
         output_dir=settings.REPORTS_DIR,
         report_number=report_number,
     )

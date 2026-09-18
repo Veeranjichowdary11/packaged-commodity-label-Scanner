@@ -17,6 +17,14 @@ async def get_db():
         yield session
 
 
+from sqlalchemy import text
+
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Migrate existing scans table if image_paths column is missing
+        try:
+            await conn.execute(text("ALTER TABLE scans ADD COLUMN image_paths JSON"))
+        except Exception:
+            pass
+

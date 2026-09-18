@@ -3,7 +3,17 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { scanAPI } from '@/lib/api';
-import { CheckCircle, XCircle, AlertTriangle, Download, ArrowLeft, FileText, Shield } from 'lucide-react';
+import { 
+  CheckCircle, 
+  XCircle, 
+  AlertTriangle, 
+  Download, 
+  ArrowLeft, 
+  FileText, 
+  Shield, 
+  ImageIcon, 
+  Layers
+} from 'lucide-react';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/hooks/useAuth';
@@ -13,6 +23,7 @@ export default function ScanResultPage() {
   const { id } = useParams();
   const [scan, setScan] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
 
   useEffect(() => {
     if (id && !isNaN(Number(id))) {
@@ -48,6 +59,35 @@ export default function ScanResultPage() {
   const status = statusConfig[scan.compliance_status] || statusConfig.non_compliant;
   const StatusIcon = status.icon;
 
+  const backendBase = process.env.NEXT_PUBLIC_API_URL 
+    ? process.env.NEXT_PUBLIC_API_URL.replace(/\/api\/?$/, '') 
+    : 'http://127.0.0.1:8000';
+
+  const getImageUrl = (rawPath: string) => {
+    if (!rawPath) return '';
+    if (rawPath.startsWith('http://') || rawPath.startsWith('https://')) return rawPath;
+    const cleanPath = rawPath.replace(/^[/\\]+/, '').replace(/\\/g, '/');
+    return `${backendBase}/${cleanPath}`;
+  };
+
+  // Compile image list from image_paths or image_path
+  const imageList: Array<{ label: string; path: string }> = [];
+  if (Array.isArray(scan.image_paths) && scan.image_paths.length > 0) {
+    scan.image_paths.forEach((img: any, idx: number) => {
+      imageList.push({
+        label: img.label || `Angle ${idx + 1}`,
+        path: img.path || img.url || '',
+      });
+    });
+  } else if (scan.image_path) {
+    imageList.push({
+      label: 'Primary Panel',
+      path: scan.image_path,
+    });
+  }
+
+  const activeImage = imageList[selectedImageIndex] || imageList[0];
+
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4">
       <div className="max-w-3xl mx-auto">
@@ -68,6 +108,56 @@ export default function ScanResultPage() {
             </div>
           </div>
         </div>
+
+        {/* Scanned Images Gallery */}
+        {imageList.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-gray-900 flex items-center gap-2 text-sm">
+                <Layers className="h-4 w-4 text-primary-600" /> Scanned Product Panels ({imageList.length})
+              </h3>
+              {imageList.length > 1 && (
+                <span className="text-xs text-gray-400">Click angle to inspect</span>
+              )}
+            </div>
+
+            {/* Angle Selector Tabs */}
+            {imageList.length > 1 && (
+              <div className="flex flex-wrap gap-2 mb-3">
+                {imageList.map((img, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setSelectedImageIndex(idx)}
+                    className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                      selectedImageIndex === idx 
+                        ? 'bg-primary-600 text-white shadow-sm' 
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {img.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Main Preview Container */}
+            {activeImage && (
+              <div className="rounded-lg bg-gray-100 border border-gray-200 overflow-hidden flex flex-col items-center justify-center p-2">
+                <img 
+                  src={getImageUrl(activeImage.path)} 
+                  alt={activeImage.label}
+                  className="max-h-80 w-auto object-contain rounded"
+                  onError={(e) => {
+                    // Fallback placeholder if image not found on disk
+                    (e.target as HTMLElement).style.display = 'none';
+                  }}
+                />
+                <p className="text-xs text-gray-500 mt-2 font-medium">{activeImage.label}</p>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="grid md:grid-cols-2 gap-6 mb-6">
           <div className="bg-white rounded-xl border border-gray-200 p-5">
