@@ -553,3 +553,58 @@ async def download_report(
         media_type="application/pdf",
         filename=f"{report.report_number}.pdf",
     )
+
+
+@router.get("/{scan_id}/notice")
+async def download_statutory_notice(
+    scan_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    from fastapi.responses import FileResponse
+    from app.services.notice_generator import generate_rule32_notice
+
+    scan_res = await db.execute(
+        select(Scan).options(selectinload(Scan.violations)).where(Scan.id == scan_id)
+    )
+    scan = scan_res.scalar_one_or_none()
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+
+    status_val = scan.compliance_status.value if hasattr(scan.compliance_status, "value") else str(scan.compliance_status)
+    scan_data = {
+        "scan_id": scan.id,
+        "compliance_status": status_val,
+        "compliance_score": scan.compliance_score,
+        "scan_type": scan.scan_type,
+        "store_name": scan.store_name,
+        "store_address": scan.store_address,
+        "barcode": scan.barcode_detected,
+        "inspector_name": scan.inspector_name or user.full_name or "Authorized Legal Metrology Inspector",
+    }
+    v_dicts = [
+        {
+            "rule_code": v.rule_code,
+            "rule_name": v.rule_name,
+            "description": v.description,
+            "severity": v.severity.value if hasattr(v.severity, "value") else str(v.severity),
+            "expected_value": v.expected_value,
+            "actual_value": v.actual_value,
+            "section_reference": v.section_reference,
+        }
+        for v in scan.violations
+    ]
+
+    notice_path = await run_in_threadpool(
+        generate_rule32_notice,
+        scan_data=scan_data,
+        violations=v_dicts,
+        extracted_fields=scan.extracted_fields or {},
+        output_dir=settings.REPORTS_DIR,
+    )
+
+    return FileResponse(
+        notice_path,
+        media_type="application/pdf",
+        filename=f"Rule32-Notice-Scan-{scan.id}.pdf",
+    )

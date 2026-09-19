@@ -18,11 +18,19 @@ import {
   Edit3,
   Check,
   Award,
-  AlertCircle
+  AlertCircle,
+  FileSpreadsheet,
+  ShieldAlert,
+  Crosshair
 } from 'lucide-react';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/hooks/useAuth';
+
+import CaliperTool from '@/components/CaliperTool';
+import VoiceAssistant from '@/components/VoiceAssistant';
+import UspCalculator from '@/components/UspCalculator';
+import ComplaintDossierModal from '@/components/ComplaintDossierModal';
 
 export default function ScanResultPage() {
   const { checked, user } = useAuth();
@@ -33,6 +41,8 @@ export default function ScanResultPage() {
 
   // Inspector Workbench State
   const [isReviewOpen, setIsReviewOpen] = useState(false);
+  const [isCaliperOpen, setIsCaliperOpen] = useState(false);
+  const [isComplaintOpen, setIsComplaintOpen] = useState(false);
   const [submittingReview, setSubmittingReview] = useState(false);
   const [correctedFields, setCorrectedFields] = useState<Record<string, any>>({});
   const [resolvedViolations, setResolvedViolations] = useState<Record<number, { status: string; inspector_remark: string }>>({});
@@ -111,6 +121,21 @@ export default function ScanResultPage() {
       toast.success('Inspection report downloaded');
     } catch {
       toast.error('Report not available');
+    }
+  };
+
+  const downloadNotice = async () => {
+    try {
+      const res = await scanAPI.notice(Number(id));
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Rule32-ShowCauseNotice-${id}.pdf`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+      toast.success('Statutory Rule 32 Notice downloaded');
+    } catch {
+      toast.error('Could not generate statutory notice');
     }
   };
 
@@ -254,23 +279,43 @@ export default function ScanResultPage() {
           <Link href="/history" className="flex items-center gap-1.5 text-gray-500 hover:text-gray-800 text-sm font-medium transition-colors">
             <ArrowLeft className="h-4 w-4" /> Back to History
           </Link>
-          <div className="flex items-center gap-2">
+          
+          <div className="flex flex-wrap items-center gap-2">
+            <VoiceAssistant scan={scan} />
+
+            <button
+              onClick={() => setIsComplaintOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-red-50 text-red-700 border border-red-200 rounded-lg text-xs font-bold hover:bg-red-100 transition-colors shadow-sm"
+            >
+              <ShieldAlert className="h-3.5 w-3.5 text-red-600" /> File NCH Grievance
+            </button>
+
             <button
               onClick={() => setIsReviewOpen(!isReviewOpen)}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-semibold transition-all shadow-sm ${
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-all shadow-sm ${
                 isReviewOpen
                   ? 'bg-amber-600 text-white hover:bg-amber-700'
                   : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
               }`}
             >
-              <UserCheck className="h-4 w-4 text-primary-600" />
-              {isReviewOpen ? 'Close Review Workbench' : (scan.is_reviewed ? 'Edit Inspector Review' : 'Authorized Inspector Review')}
+              <UserCheck className="h-3.5 w-3.5 text-primary-600" />
+              {isReviewOpen ? 'Close Review' : (scan.is_reviewed ? 'Edit Review' : 'Inspector Workbench')}
             </button>
+
+            {scan.violations && scan.violations.length > 0 && (
+              <button
+                onClick={downloadNotice}
+                className="flex items-center gap-1.5 px-3 py-2 bg-amber-700 text-white rounded-lg text-xs font-bold hover:bg-amber-800 transition-colors shadow-sm"
+              >
+                <FileSpreadsheet className="h-3.5 w-3.5" /> Rule 32 Notice (PDF)
+              </button>
+            )}
+
             <button
               onClick={downloadReport}
-              className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-semibold hover:bg-primary-700 transition-colors shadow-sm"
+              className="flex items-center gap-1.5 px-3 py-2 bg-primary-600 text-white rounded-lg text-xs font-bold hover:bg-primary-700 transition-colors shadow-sm"
             >
-              <Download className="h-4 w-4" /> Download Official PDF
+              <Download className="h-3.5 w-3.5" /> Official Report (PDF)
             </button>
           </div>
         </div>
@@ -454,9 +499,18 @@ export default function ScanResultPage() {
 
             {/* Section 2: Physical Font Size Caliper Verification */}
             <div className="mb-6 p-4 bg-gray-50 rounded-xl border border-gray-200">
-              <h4 className="text-sm font-bold text-gray-900 mb-2 flex items-center gap-2">
-                <Ruler className="h-4 w-4 text-primary-600" /> 2. Rule 7 Font Size Physical Caliper Verification
-              </h4>
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                  <Ruler className="h-4 w-4 text-primary-600" /> 2. Rule 7 Font Size Physical Caliper Verification
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => setIsCaliperOpen(true)}
+                  className="px-2.5 py-1 bg-primary-600 text-white rounded text-xs font-bold hover:bg-primary-700 flex items-center gap-1"
+                >
+                  <Crosshair className="h-3 w-3" /> Open On-Screen Caliper
+                </button>
+              </div>
               <p className="text-xs text-gray-500 mb-3">
                 Resolve the automated &quot;Review Required&quot; status by entering certified physical caliper or optical scale measurements.
               </p>
@@ -626,6 +680,25 @@ export default function ScanResultPage() {
           </div>
         )}
 
+        {/* On-Screen Caliper Tool Modal/Overlay */}
+        {isCaliperOpen && activeImage && (
+          <div className="mb-6">
+            <CaliperTool
+              imageUrl={getImageUrl(activeImage.path)}
+              statutoryMinMm={scan.font_size_assessment?.statutory_min_height_mm || 2.0}
+              onClose={() => setIsCaliperOpen(false)}
+              onApplyMeasurement={(measuredVal, notes) => {
+                setCaliperMm(String(measuredVal));
+                setCaliperStatus(measuredVal >= (scan.font_size_assessment?.statutory_min_height_mm || 2.0) ? 'COMPLIANT' : 'NON_COMPLIANT');
+                setCaliperNotes(notes);
+                setIsCaliperOpen(false);
+                setIsReviewOpen(true);
+                toast.success(`Applied caliper reading: ${measuredVal} mm`);
+              }}
+            />
+          </div>
+        )}
+
         {/* Scanned Images Gallery */}
         {imageList.length > 0 && (
           <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6 shadow-sm">
@@ -633,9 +706,18 @@ export default function ScanResultPage() {
               <h3 className="font-semibold text-gray-900 flex items-center gap-2 text-sm">
                 <Layers className="h-4 w-4 text-primary-600" /> Scanned Product Panels ({imageList.length})
               </h3>
-              {imageList.length > 1 && (
-                <span className="text-xs text-gray-400">Click angle to inspect</span>
-              )}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsCaliperOpen(!isCaliperOpen)}
+                  className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-xs font-semibold flex items-center gap-1 transition-colors"
+                >
+                  <Ruler className="h-3 w-3 text-primary-600" /> {isCaliperOpen ? 'Hide Caliper' : 'Measure Font on Image'}
+                </button>
+                {imageList.length > 1 && (
+                  <span className="text-xs text-gray-400">Click angle to inspect</span>
+                )}
+              </div>
             </div>
 
             {imageList.length > 1 && (
@@ -657,7 +739,7 @@ export default function ScanResultPage() {
               </div>
             )}
 
-            {activeImage && (
+            {activeImage && !isCaliperOpen && (
               <div className="rounded-lg bg-gray-100 border border-gray-200 overflow-hidden flex flex-col items-center justify-center p-2">
                 <img 
                   src={getImageUrl(activeImage.path)} 
@@ -672,6 +754,9 @@ export default function ScanResultPage() {
             )}
           </div>
         )}
+
+        {/* Unit Sale Price & Shrinkflation Radar */}
+        <UspCalculator extractedFields={scan.extracted_fields} />
 
         {/* Font Size & Legibility Verification Card (Legal Metrology Rule 7 & 9) */}
         <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6 shadow-sm">
@@ -745,7 +830,7 @@ export default function ScanResultPage() {
               <div>
                 <p className="font-bold">Review Required — 2D Image Physical Scale Limitation:</p>
                 <p className="text-amber-800 mt-0.5">
-                  Physical millimeter dimensions cannot be reliably certified from 2D photos without physical calibration targets. An authorized inspector can verify font dimensions using digital calipers in the Review Workbench.
+                  Physical millimeter dimensions cannot be reliably certified from 2D photos without physical calibration targets. An authorized inspector can verify font dimensions using the on-screen or physical caliper in the Review Workbench.
                 </p>
               </div>
             </div>
@@ -920,6 +1005,14 @@ export default function ScanResultPage() {
               })}
             </div>
           </div>
+        )}
+
+        {/* NCH Complaint Modal */}
+        {isComplaintOpen && (
+          <ComplaintDossierModal
+            scan={scan}
+            onClose={() => setIsComplaintOpen(false)}
+          />
         )}
       </div>
     </div>
