@@ -289,29 +289,41 @@ def extract_common_name(text: str, master_product: Optional[dict] = None) -> Opt
 
 def extract_batch_number(text: str) -> Optional[str]:
     patterns = [
-        r'\b(?:Batch\s+(?:No\.?|Number)|Lot\s+(?:No\.?|Number))\s*[:\.\-\s\[\(\{|]*([A-Za-z0-9][\w\-\/]+)',
-        r'\b(?:B\.?\s*No\.?|L\.?\s*No\.?)\s*[:\.\-\s\[\(\{|]*([A-Za-z0-9][\w\-\/]+)',
+        r'\b(?:Batch\s+(?:No\.?|Number)|Lot\s+(?:No\.?|Number|nd)|Lotnd)\s*[:\.\-\s\[\(\{|]*([A-Za-z0-9][\w\-\/]*)',
+        r'\b(?:B\.?\s*No\.?|L\.?\s*No\.?|BN[\s\:]|Lot[\s\:])\s*[:\.\-\s\[\(\{|]*([A-Za-z0-9][\w\-\/]*)',
         r'\b(?:Batch|Lot)\s*[:\.\-\s\[\(\{|]+(?!Number\b|No\b)([A-Za-z0-9][\w\-\/]+)',
     ]
     for pattern in patterns:
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
-            val = match.group(1).strip()
-            if len(val) >= 3 and not re.match(r'^(?:Number|No|Date|Code|and|of|for)$', val, re.IGNORECASE):
+            val = match.group(1).strip().rstrip('.,;- ')
+            if len(val) >= 2 and not re.match(r'^(?:Number|No|Date|Code|and|of|for|the|by)$', val, re.IGNORECASE):
                 return val
     return None
 
 
 def extract_fssai(text: str) -> Optional[str]:
-    match = re.search(r'(?:FSSAI|Lic(?:ense)?[\s\.;:\-]*No[\.;:\-]*)[\s\.;:\-,\(\[\{]*(\d{14})', text, re.IGNORECASE)
+    # 1. Look for explicit FSSAI / Lic No prefix with OCR noise tolerance (LJc, Lie, C/O for 0, etc.)
+    prefix_pattern = r'(?:FSSAI|L[ij!|1][ce][\s\.;:\-]*No[\.;:\-]*|Central\s+Lic[\s\.;:\-]*(?:No)?)\s*[:\.\-\s\[\(\{|]*([0-9OCQDIl]{12,14})'
+    match = re.search(prefix_pattern, text, re.IGNORECASE)
     if match:
-        return match.group(1).strip()
+        raw_val = match.group(1).upper()
+        clean_val = raw_val.replace('O', '0').replace('C', '0').replace('Q', '0').replace('D', '0').replace('I', '1').replace('L', '1')
+        if len(clean_val) in (13, 14):
+            if len(clean_val) == 13 and clean_val.startswith('100'):
+                clean_val = clean_val[:10] + '0' + clean_val[10:]
+            return clean_val
+
+    # 2. Strict 14-digit FSSAI sequence (starts with 1 or 2 in India)
     fssai_structured = re.search(r'(?<!\d)([12]\d{13})(?!\d)', text)
     if fssai_structured:
         return fssai_structured.group(1).strip()
+
+    # 3. Any 14-digit number
     fssai_only = re.search(r'(?<!\d)(\d{14})(?!\d)', text)
     if fssai_only:
         return fssai_only.group(1).strip()
+
     return None
 
 
